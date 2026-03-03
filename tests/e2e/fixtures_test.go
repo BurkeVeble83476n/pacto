@@ -1,0 +1,385 @@
+//go:build e2e
+
+package e2e
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+// Contract YAML templates for test fixtures.
+
+const openapiTemplate = `openapi: "3.0.0"
+info:
+  title: %s
+  version: %s
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+`
+
+const protoTemplate = `syntax = "proto3";
+package %s;
+
+service %sService {
+  rpc Health (HealthRequest) returns (HealthResponse);
+}
+
+message HealthRequest {}
+message HealthResponse {
+  string status = 1;
+}
+`
+
+const configSchemaTemplate = `{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {},
+  "additionalProperties": false
+}
+`
+
+func myAppContractV1(registryHost string) string {
+	return fmt.Sprintf(`pactoVersion: "1.0"
+
+service:
+  name: my-app
+  version: 1.0.0
+  owner: team/platform
+
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+    visibility: internal
+    contract: interfaces/openapi.yaml
+
+configuration:
+  schema: configuration/schema.json
+
+dependencies:
+  - ref: %s/postgres-pacto:1.0.0
+    required: true
+    compatibility: "^1.0.0"
+  - ref: %s/redis-pacto:1.0.0
+    required: false
+    compatibility: "^1.0.0"
+
+runtime:
+  workload:
+    type: service
+    concurrency: finite
+  network:
+    defaultInterface: api
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  lifecycle:
+    upgradeStrategy: rolling
+    gracefulShutdownSeconds: 30
+  health:
+    interface: api
+    path: /health
+    initialDelaySeconds: 5
+
+scaling:
+  min: 1
+  max: 5
+
+metadata:
+  team: platform
+  tier: standard
+`, registryHost, registryHost)
+}
+
+func myAppContractV2(registryHost string) string {
+	return fmt.Sprintf(`pactoVersion: "1.0"
+
+service:
+  name: my-app
+  version: 2.0.0
+  owner: team/platform
+
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+    visibility: internal
+    contract: interfaces/openapi.yaml
+
+configuration:
+  schema: configuration/schema.json
+
+dependencies:
+  - ref: %s/postgres-pacto:1.0.0
+    required: true
+    compatibility: "^1.0.0"
+  - ref: %s/redis-pacto:2.0.0
+    required: true
+    compatibility: "^2.0.0"
+
+runtime:
+  workload:
+    type: service
+    concurrency: finite
+  network:
+    defaultInterface: api
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  lifecycle:
+    upgradeStrategy: rolling
+    gracefulShutdownSeconds: 30
+  health:
+    interface: api
+    path: /health
+    initialDelaySeconds: 5
+
+scaling:
+  min: 2
+  max: 10
+
+metadata:
+  team: platform
+  tier: premium
+`, registryHost, registryHost)
+}
+
+const postgresContractV1 = `pactoVersion: "1.0"
+
+service:
+  name: postgres-pacto
+  version: 1.0.0
+  owner: team/data
+
+interfaces:
+  - name: db
+    type: grpc
+    port: 5432
+    visibility: internal
+    contract: interfaces/db.proto
+
+configuration:
+  schema: configuration/schema.json
+
+runtime:
+  workload:
+    type: service
+    concurrency: long-lived
+  state:
+    type: stateful
+    persistence:
+      scope: shared
+      durability: persistent
+    dataCriticality: high
+  health:
+    interface: db
+    path: /health
+
+scaling:
+  min: 1
+  max: 3
+
+metadata:
+  team: data
+  tier: critical
+`
+
+const redisContractV1 = `pactoVersion: "1.0"
+
+service:
+  name: redis-pacto
+  version: 1.0.0
+  owner: team/data
+
+interfaces:
+  - name: cache
+    type: grpc
+    port: 6379
+    visibility: internal
+    contract: interfaces/cache.proto
+
+configuration:
+  schema: configuration/schema.json
+
+runtime:
+  workload:
+    type: service
+    concurrency: long-lived
+  state:
+    type: stateful
+    persistence:
+      scope: shared
+      durability: persistent
+    dataCriticality: medium
+  health:
+    interface: cache
+    path: /health
+
+scaling:
+  min: 1
+  max: 3
+
+metadata:
+  team: data
+  tier: standard
+`
+
+const redisContractV2 = `pactoVersion: "1.0"
+
+service:
+  name: redis-pacto
+  version: 2.0.0
+  owner: team/data
+
+interfaces:
+  - name: cache
+    type: grpc
+    port: 6379
+    visibility: internal
+    contract: interfaces/cache.proto
+
+configuration:
+  schema: configuration/schema.json
+
+runtime:
+  workload:
+    type: service
+    concurrency: long-lived
+  state:
+    type: stateful
+    persistence:
+      scope: shared
+      durability: persistent
+    dataCriticality: high
+  health:
+    interface: cache
+    path: /health
+
+scaling:
+  min: 2
+  max: 6
+
+metadata:
+  team: data
+  tier: critical
+`
+
+const brokenContract = `pactoVersion: "1.0"
+service:
+  name: broken-svc
+  version: "1.0.0"
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+runtime:
+  workload:
+    type: service
+    concurrency: finite
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  health:
+    interface: wrong-name
+    path: /health
+`
+
+// writeBundleDir writes a contract YAML and companion files to a temporary directory.
+// Returns the path to the pacto.yaml file.
+func writeBundleDir(t *testing.T, dir, contractYAML string, ifaceFiles map[string]string) string {
+	t.Helper()
+
+	if err := os.MkdirAll(filepath.Join(dir, "interfaces"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "configuration"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	pactoPath := filepath.Join(dir, "pacto.yaml")
+	if err := os.WriteFile(pactoPath, []byte(contractYAML), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write interface files
+	for name, content := range ifaceFiles {
+		p := filepath.Join(dir, "interfaces", name)
+		if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Write config schema
+	schemaPath := filepath.Join(dir, "configuration", "schema.json")
+	if err := os.WriteFile(schemaPath, []byte(configSchemaTemplate), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	return pactoPath
+}
+
+// writeMyAppV1Bundle creates the my-app@1.0.0 bundle directory.
+func writeMyAppV1Bundle(t *testing.T, registryHost string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "my-app-v1")
+	writeBundleDir(t, dir, myAppContractV1(registryHost), map[string]string{
+		"openapi.yaml": fmt.Sprintf(openapiTemplate, "my-app", "1.0.0"),
+	})
+	return filepath.Join(dir, "pacto.yaml")
+}
+
+// writeMyAppV2Bundle creates the my-app@2.0.0 bundle directory.
+func writeMyAppV2Bundle(t *testing.T, registryHost string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "my-app-v2")
+	writeBundleDir(t, dir, myAppContractV2(registryHost), map[string]string{
+		"openapi.yaml": fmt.Sprintf(openapiTemplate, "my-app", "2.0.0"),
+	})
+	return filepath.Join(dir, "pacto.yaml")
+}
+
+// writePostgresBundle creates the postgres-pacto@1.0.0 bundle directory.
+func writePostgresBundle(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "postgres-pacto")
+	writeBundleDir(t, dir, postgresContractV1, map[string]string{
+		"db.proto": fmt.Sprintf(protoTemplate, "postgres", "Postgres"),
+	})
+	return filepath.Join(dir, "pacto.yaml")
+}
+
+// writeRedisV1Bundle creates the redis-pacto@1.0.0 bundle directory.
+func writeRedisV1Bundle(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "redis-pacto-v1")
+	writeBundleDir(t, dir, redisContractV1, map[string]string{
+		"cache.proto": fmt.Sprintf(protoTemplate, "redis", "Redis"),
+	})
+	return filepath.Join(dir, "pacto.yaml")
+}
+
+// writeRedisV2Bundle creates the redis-pacto@2.0.0 bundle directory.
+func writeRedisV2Bundle(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "redis-pacto-v2")
+	writeBundleDir(t, dir, redisContractV2, map[string]string{
+		"cache.proto": fmt.Sprintf(protoTemplate, "redis", "Redis"),
+	})
+	return filepath.Join(dir, "pacto.yaml")
+}

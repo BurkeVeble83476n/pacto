@@ -1,0 +1,35 @@
+package cli
+
+import (
+	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
+	"github.com/trianalab/pacto/internal/app"
+)
+
+func newPullCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pull <ref>",
+		Short: "Pull a contract bundle from an OCI registry",
+		Long:  "Pulls a contract bundle from the specified OCI reference and extracts it to a local directory.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ref := args[0]
+			output, _ := cmd.Flags().GetString("output")
+
+			result, err := svc.Pull(cmd.Context(), app.PullOptions{
+				Ref:    ref,
+				Output: output,
+			})
+			if err != nil {
+				return err
+			}
+
+			format := v.GetString("output-format")
+			return printPullResult(cmd, result, format)
+		},
+	}
+
+	cmd.Flags().StringP("output", "o", "", "output directory (default: service name)")
+
+	return cmd
+}

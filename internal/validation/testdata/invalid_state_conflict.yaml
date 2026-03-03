@@ -1,0 +1,26 @@
+pactoVersion: "1.0"
+
+service:
+  name: bad-service
+  version: 1.0.0
+
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+
+runtime:
+  workload:
+    type: service
+    concurrency: finite
+
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: persistent
+    dataCriticality: low
+
+  health:
+    interface: api
+    path: /health

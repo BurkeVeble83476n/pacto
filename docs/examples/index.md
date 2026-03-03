@@ -1,0 +1,48 @@
+---
+title: Examples
+layout: default
+nav_order: 10
+has_children: true
+---
+
+# Example Contracts
+
+This section provides ready-to-use Pacto contracts for common infrastructure services. Use these as references when writing your own contracts or as dependencies in your service contracts.
+
+{: .tip }
+These contracts represent the **operational interface** of each service — not a deployment recipe. They describe what the service exposes, how it behaves, and what the platform needs to know.
+
+---
+
+## Available examples
+
+| Service | Type | State | Description |
+|---------|------|-------|-------------|
+| [PostgreSQL]({{ site.baseurl }}{% link examples/postgresql.md %}) | service | stateful/persistent | Relational database |
+| [Redis]({{ site.baseurl }}{% link examples/redis.md %}) | service | stateful/persistent | In-memory data store |
+| [RabbitMQ]({{ site.baseurl }}{% link examples/rabbitmq.md %}) | service | stateful/persistent | Message broker |
+| [NGINX]({{ site.baseurl }}{% link examples/nginx.md %}) | service | stateless/ephemeral | Reverse proxy / web server |
+| [Cron Worker]({{ site.baseurl }}{% link examples/cron-worker.md %}) | scheduled | stateless/ephemeral | Scheduled batch job |
+
+---
+
+## Using examples as dependencies
+
+You can reference these contracts (once published to a registry) as dependencies in your own `pacto.yaml`:
+
+```yaml
+dependencies:
+  - ref: ghcr.io/acme/postgres-pacto@sha256:abc123
+    required: true
+    compatibility: "^16.0.0"
+
+  - ref: ghcr.io/acme/redis-pacto@sha256:def456
+    required: false
+    compatibility: "^7.0.0"
+```
+
+Then use `pacto graph` to visualize the full dependency tree:
+
+```bash
+pacto graph pacto.yaml
+```

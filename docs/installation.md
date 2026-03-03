@@ -1,0 +1,43 @@
+---
+title: Installation
+layout: default
+nav_order: 2
+---
+
+# Installation
+
+## From source (Go)
+
+Requires [Go 1.25.7](https://go.dev/dl/) or later.
+
+```bash
+go install github.com/trianalab/pacto/cmd/pacto@latest
+```
+
+Verify the installation:
+
+```bash
+pacto version
+```
+
+## From source (manual build)
+
+```bash
+git clone https://github.com/TrianaLab/pacto.git
+cd pacto
+make build
+```
+
+The binary is placed in your `$GOBIN` directory (typically `~/go/bin`).
+
+## Build targets
+
+```bash
+make build    # Compile the pacto binary with version injection
+make test     # Run all tests
+make lint     # Run go vet
+make clean    # Remove build artifacts
+```
+
+{: .note }
+Pre-built binaries and package manager support (Homebrew, apt, etc.) are planned for future releases.

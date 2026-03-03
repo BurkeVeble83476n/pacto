@@ -1,0 +1,125 @@
+package diff
+
+import (
+	"fmt"
+
+	"github.com/trianalab/pacto/pkg/contract"
+)
+
+// diffContract compares root-level fields: service identity, scaling, metadata.
+func diffContract(old, new *contract.Contract) []Change {
+	var changes []Change
+
+	// Service identity
+	if old.Service.Name != new.Service.Name {
+		changes = append(changes, newChange("service.name", Modified, old.Service.Name, new.Service.Name))
+	}
+	if old.Service.Version != new.Service.Version {
+		changes = append(changes, newChange("service.version", Modified, old.Service.Version, new.Service.Version))
+	}
+	if old.Service.Owner != new.Service.Owner {
+		ct := Modified
+		if old.Service.Owner == "" {
+			ct = Added
+		} else if new.Service.Owner == "" {
+			ct = Removed
+		}
+		changes = append(changes, newChange("service.owner", ct, old.Service.Owner, new.Service.Owner))
+	}
+
+	// Image
+	oldImg := formatImage(old.Service.Image)
+	newImg := formatImage(new.Service.Image)
+	if oldImg != newImg {
+		ct := Modified
+		if old.Service.Image == nil {
+			ct = Added
+		} else if new.Service.Image == nil {
+			ct = Removed
+		}
+		changes = append(changes, newChange("service.image", ct, oldImg, newImg))
+	}
+
+	// Scaling
+	changes = append(changes, diffScaling(old.Scaling, new.Scaling)...)
+
+	return changes
+}
+
+func diffScaling(old, new *contract.Scaling) []Change {
+	var changes []Change
+
+	if old == nil && new == nil {
+		return nil
+	}
+	if old == nil {
+		changes = append(changes, newChange("scaling", Added, nil, fmt.Sprintf("min=%d max=%d", new.Min, new.Max)))
+		return changes
+	}
+	if new == nil {
+		changes = append(changes, newChange("scaling", Removed, fmt.Sprintf("min=%d max=%d", old.Min, old.Max), nil))
+		return changes
+	}
+
+	if old.Min != new.Min {
+		changes = append(changes, newChange("scaling.min", Modified, old.Min, new.Min))
+	}
+	if old.Max != new.Max {
+		changes = append(changes, newChange("scaling.max", Modified, old.Max, new.Max))
+	}
+
+	return changes
+}
+
+func formatImage(img *contract.Image) string {
+	if img == nil {
+		return ""
+	}
+	return img.Ref
+}
+
+// newChange creates a Change with classification looked up from the rules table.
+func newChange(path string, ct ChangeType, oldVal, newVal any) Change {
+	cls := classify(path, ct)
+	return Change{
+		Path:           path,
+		Type:           ct,
+		OldValue:       oldVal,
+		NewValue:       newVal,
+		Classification: cls,
+		Reason:         fmt.Sprintf("%s %s", path, ct),
+	}
+}
+
+// diffStringSet compares two string-keyed boolean maps and emits Added/Removed
+// changes. pathPrefix is used for the classification rule lookup (e.g.
+// "openapi.paths"), and entityName for human-readable reasons (e.g. "API path").
+func diffStringSet(oldSet, newSet map[string]bool, pathPrefix, entityName string) []Change {
+	var changes []Change
+
+	for key := range oldSet {
+		if !newSet[key] {
+			changes = append(changes, Change{
+				Path:           fmt.Sprintf("%s[%s]", pathPrefix, key),
+				Type:           Removed,
+				OldValue:       key,
+				Classification: classify(pathPrefix, Removed),
+				Reason:         fmt.Sprintf("%s %s removed", entityName, key),
+			})
+		}
+	}
+
+	for key := range newSet {
+		if !oldSet[key] {
+			changes = append(changes, Change{
+				Path:           fmt.Sprintf("%s[%s]", pathPrefix, key),
+				Type:           Added,
+				NewValue:       key,
+				Classification: classify(pathPrefix, Added),
+				Reason:         fmt.Sprintf("%s %s added", entityName, key),
+			})
+		}
+	}
+
+	return changes
+}

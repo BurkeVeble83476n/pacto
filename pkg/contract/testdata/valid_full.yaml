@@ -1,0 +1,70 @@
+pactoVersion: "1.0"
+
+service:
+  name: payments-api
+  version: 2.1.0
+  owner: team/payments
+  image:
+    ref: ghcr.io/acme/payments-api:2.1.0
+    private: true
+
+interfaces:
+  - name: rest-api
+    type: http
+    port: 8080
+    visibility: public
+    contract: interfaces/openapi.yaml
+
+  - name: grpc-api
+    type: grpc
+    port: 9090
+    visibility: internal
+    contract: interfaces/service.proto
+
+  - name: order-events
+    type: event
+    visibility: internal
+    contract: interfaces/events.yaml
+
+configuration:
+  schema: configuration/schema.json
+
+dependencies:
+  - ref: ghcr.io/acme/auth-service-pacto@sha256:abc123def456
+    required: true
+    compatibility: "^2.0.0"
+  - ref: ghcr.io/acme/notification-service-pacto:1.0.0
+    required: false
+    compatibility: "~1.0.0"
+
+runtime:
+  workload:
+    type: service
+    concurrency: long-lived
+
+  network:
+    defaultInterface: rest-api
+
+  state:
+    type: stateful
+    persistence:
+      scope: local
+      durability: persistent
+    dataCriticality: high
+
+  lifecycle:
+    upgradeStrategy: ordered
+    gracefulShutdownSeconds: 30
+
+  health:
+    interface: rest-api
+    path: /health
+    initialDelaySeconds: 15
+
+scaling:
+  min: 2
+  max: 10
+
+metadata:
+  team: payments
+  tier: critical

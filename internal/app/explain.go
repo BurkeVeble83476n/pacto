@@ -1,0 +1,98 @@
+package app
+
+import (
+	"context"
+
+	"github.com/trianalab/pacto/pkg/contract"
+)
+
+// ExplainOptions holds options for the explain command.
+type ExplainOptions struct {
+	Path string
+}
+
+// ExplainResult holds the result of the explain command.
+type ExplainResult struct {
+	Name         string                 `json:"name"`
+	Version      string                 `json:"version"`
+	Owner        string                 `json:"owner,omitempty"`
+	PactoVersion string                 `json:"pactoVersion"`
+	Runtime      ExplainRuntime         `json:"runtime"`
+	Interfaces   []ExplainInterface     `json:"interfaces,omitempty"`
+	Dependencies []ExplainDependency    `json:"dependencies,omitempty"`
+	Scaling      *contract.Scaling      `json:"scaling,omitempty"`
+	Metadata     map[string]interface{} `json:"metadata,omitempty"`
+}
+
+// ExplainRuntime is a simplified runtime summary.
+type ExplainRuntime struct {
+	WorkloadType    string `json:"workloadType"`
+	Concurrency     string `json:"concurrency"`
+	StateType       string `json:"stateType"`
+	Scope           string `json:"scope"`
+	Durability      string `json:"durability"`
+	DataCriticality string `json:"dataCriticality"`
+}
+
+// ExplainInterface is a simplified interface summary.
+type ExplainInterface struct {
+	Name       string `json:"name"`
+	Type       string `json:"type"`
+	Port       *int   `json:"port,omitempty"`
+	Visibility string `json:"visibility,omitempty"`
+}
+
+// ExplainDependency is a simplified dependency summary.
+type ExplainDependency struct {
+	Ref           string `json:"ref"`
+	Required      bool   `json:"required"`
+	Compatibility string `json:"compatibility"`
+}
+
+// Explain produces a human-readable summary of a contract.
+func (s *Service) Explain(ctx context.Context, opts ExplainOptions) (*ExplainResult, error) {
+	ref := defaultPath(opts.Path)
+
+	bundle, err := s.resolveBundle(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+
+	c := bundle.Contract
+
+	result := &ExplainResult{
+		Name:         c.Service.Name,
+		Version:      c.Service.Version,
+		Owner:        c.Service.Owner,
+		PactoVersion: c.PactoVersion,
+		Runtime: ExplainRuntime{
+			WorkloadType:    c.Runtime.Workload.Type,
+			Concurrency:     c.Runtime.Workload.Concurrency,
+			StateType:       c.Runtime.State.Type,
+			Scope:           c.Runtime.State.Persistence.Scope,
+			Durability:      c.Runtime.State.Persistence.Durability,
+			DataCriticality: c.Runtime.State.DataCriticality,
+		},
+		Scaling:  c.Scaling,
+		Metadata: c.Metadata,
+	}
+
+	for _, iface := range c.Interfaces {
+		result.Interfaces = append(result.Interfaces, ExplainInterface{
+			Name:       iface.Name,
+			Type:       iface.Type,
+			Port:       iface.Port,
+			Visibility: iface.Visibility,
+		})
+	}
+
+	for _, dep := range c.Dependencies {
+		result.Dependencies = append(result.Dependencies, ExplainDependency{
+			Ref:           dep.Ref,
+			Required:      dep.Required,
+			Compatibility: dep.Compatibility,
+		})
+	}
+
+	return result, nil
+}

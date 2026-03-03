@@ -1,0 +1,34 @@
+pactoVersion: "1.0"
+
+service:
+  name: db-service
+  version: 2.0.0
+  image:
+    ref: ghcr.io/acme/db-service:2.0.0
+    private: true
+
+interfaces:
+  - name: api
+    type: http
+    port: 5432
+
+runtime:
+  workload:
+    type: service
+    concurrency: long-lived
+
+  state:
+    type: stateful
+    persistence:
+      scope: local
+      durability: persistent
+    dataCriticality: high
+
+  lifecycle:
+    upgradeStrategy: ordered
+    gracefulShutdownSeconds: 60
+
+  health:
+    interface: api
+    path: /health
+    initialDelaySeconds: 30

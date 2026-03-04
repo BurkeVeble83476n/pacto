@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - uses: actions/checkout@v6.0.2
+
       - uses: ./.github/actions/ci
 
   coverage:

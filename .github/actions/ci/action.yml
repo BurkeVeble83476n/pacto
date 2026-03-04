@@ -4,8 +4,6 @@ description: Shared CI steps — setup Go, lint, unit tests, e2e tests
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v6.0.2
-
     - uses: actions/setup-go@v6.3.0
       with:
         go-version: '1.25'

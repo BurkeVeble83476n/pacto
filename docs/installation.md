@@ -50,6 +50,25 @@ make build
 
 The binary is placed in your `$GOBIN` directory (typically `~/go/bin`).
 
+## Updating
+
+If you installed pacto via the installer script or from a GitHub release, you can update in-place:
+
+```bash
+# Update to the latest release
+pacto update
+
+# Update to a specific version
+pacto update v1.2.0
+```
+
+This downloads the new binary and replaces the current one. No additional tools required.
+
+{: .note }
+If you installed via `go install`, use `go install github.com/trianalab/pacto/cmd/pacto@latest` to update instead.
+
+Pacto also checks for updates automatically and shows a notification when a newer version is available. To disable this, set `PACTO_NO_UPDATE_CHECK=1` in your environment.
+
 ## Build targets
 
 ```bash

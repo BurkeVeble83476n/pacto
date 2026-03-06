@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"github.com/trianalab/pacto/internal/app"
+	"github.com/trianalab/pacto/internal/update"
 )
 
 const outputFormatKey = "output-format"
@@ -35,7 +39,10 @@ func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	v.AutomaticEnv()
 
-	// Config file search
+	// Channel for async update check result
+	updateResultCh := make(chan *update.CheckResult, 1)
+
+	// Config file search + async update check
 	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
 		cfgFile := v.GetString("config")
 		if cfgFile != "" {
@@ -48,6 +55,28 @@ func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 		}
 		// Read config silently — it's optional
 		_ = v.ReadInConfig()
+
+		// Start async update check
+		if version != "dev" && os.Getenv("PACTO_NO_UPDATE_CHECK") != "1" {
+			go func() {
+				updateResultCh <- update.CheckForUpdate(version)
+			}()
+		}
+
+		return nil
+	}
+
+	// Post-run: show update notification if available
+	root.PersistentPostRunE = func(cmd *cobra.Command, args []string) error {
+		// Wait briefly for async check to complete (cache reads are near-instant)
+		select {
+		case result := <-updateResultCh:
+			if result != nil && cmd.Name() != "update" && v.GetString(outputFormatKey) != "json" {
+				_, _ = fmt.Fprintf(cmd.OutOrStderr(), "\nA new version of pacto is available: %s -> %s\nRun 'pacto update' to update.\n", result.CurrentVersion, result.LatestVersion)
+			}
+		case <-time.After(200 * time.Millisecond):
+			// Check took too long (likely a network fetch) — don't delay the user
+		}
 		return nil
 	}
 
@@ -64,6 +93,7 @@ func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 	root.AddCommand(newGenerateCommand(svc, v))
 	root.AddCommand(newLoginCommand())
 	root.AddCommand(newVersionCommand(version))
+	root.AddCommand(newUpdateCommand(version))
 
 	return root
 }

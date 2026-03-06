@@ -98,6 +98,17 @@ dependencies:
     compatibility: "~1.0.0"
 ```
 
+If your service depends on a cloud-managed resource (e.g. a database, message queue, or object store), create a minimal Pacto contract representing it and reference it as a dependency. This keeps cloud dependencies explicit and version-tracked:
+
+```yaml
+dependencies:
+  - ref: ghcr.io/acme/gcp-cloudsql-pacto:1.0.0
+    required: true
+    compatibility: "^1.0.0"
+```
+
+The contract for the cloud resource only needs the bare minimum — a service name, version, and a single interface describing how your service connects to it.
+
 Use `pacto graph` to visualize your dependency tree.
 
 ### 5. Validate before pushing

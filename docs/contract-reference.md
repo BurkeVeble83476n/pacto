@@ -17,7 +17,7 @@ A Pacto contract is a YAML file (`pacto.yaml`) that describes a service's operat
 {:toc}
 </details>
 
-The canonical JSON Schema is available at [`schema/pacto-v1.0.schema.json`](https://github.com/TrianaLab/pacto/blob/main/schema/pacto-v1.0.schema.json).
+The canonical JSON Schema is available at [`schema/pacto-v1.0.schema.json`](https://github.com/TrianaLab/pacto/blob/main/internal/validation/schema/pacto-v1.0.schema.json).
 
 ---
 
@@ -194,6 +194,9 @@ Declares dependencies on other services via their Pacto contracts.
 
 {: .tip }
 Use digest-pinned references (`@sha256:...`) for production contracts. Tag-based references produce a validation warning.
+
+{: .tip }
+If your service depends on a cloud-managed resource (e.g. GCP Cloud SQL, AWS SNS, Azure Service Bus), you can create a lightweight Pacto contract representing that resource and reference it as a dependency. This makes cloud dependencies explicit and version-tracked alongside your service contracts.
 
 ---
 

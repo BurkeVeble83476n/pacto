@@ -50,8 +50,14 @@ func newTestRegistry(t *testing.T) *testRegistry {
 	}
 }
 
-// runCommand executes a pacto CLI command and returns the combined output and error.
+// runCommand executes a pacto CLI command with the default test version.
 func runCommand(t *testing.T, reg *testRegistry, args ...string) (string, error) {
+	t.Helper()
+	return runCommandWithVersion(t, reg, "test-e2e", args...)
+}
+
+// runCommandWithVersion executes a pacto CLI command with the given version string.
+func runCommandWithVersion(t *testing.T, reg *testRegistry, version string, args ...string) (string, error) {
 	t.Helper()
 
 	var store oci.BundleStore
@@ -60,7 +66,7 @@ func runCommand(t *testing.T, reg *testRegistry, args ...string) (string, error)
 	}
 
 	svc := app.NewService(store, &plugin.SubprocessRunner{})
-	root := cli.NewRootCommand(svc, "test-e2e")
+	root := cli.NewRootCommand(svc, version)
 
 	var out bytes.Buffer
 	root.SetOut(&out)

@@ -93,8 +93,28 @@ func schemaDesc(path string) string {
 	return schemaDescriptions[path]
 }
 
+type conceptRow struct{ concept, value, desc string }
+
 func writeDescription(b *strings.Builder, c *contract.Contract) {
-	// Summary paragraph
+	sentence := buildSummaryParagraph(c)
+	fmt.Fprintln(b, sentence)
+	fmt.Fprintln(b)
+
+	rows := buildConceptRows(c)
+	if len(rows) > 0 {
+		fmt.Fprintln(b, "| Concept | Value | Description |")
+		fmt.Fprintln(b, "|---------|-------|-------------|")
+		for _, r := range rows {
+			fmt.Fprintf(b, "| **%s** | `%s` | %s |\n", r.concept, r.value, r.desc)
+		}
+		fmt.Fprintln(b)
+	}
+
+	fmt.Fprintln(b, "For more information on contract concepts, see the [Contract Reference](https://trianalab.github.io/pacto/contract-reference/).")
+	fmt.Fprintln(b)
+}
+
+func buildSummaryParagraph(c *contract.Contract) string {
 	parts := []string{fmt.Sprintf("**%s** `v%s` is a `%s` `%s` workload", c.Service.Name, c.Service.Version, c.Runtime.State.Type, c.Runtime.Workload)}
 	if len(c.Interfaces) > 0 {
 		noun := "interface"
@@ -125,52 +145,66 @@ func writeDescription(b *strings.Builder, c *contract.Contract) {
 	if len(details) > 0 {
 		sentence += " " + capitalizeFirst(strings.Join(details, ", ")) + "."
 	}
-	fmt.Fprintln(b, sentence)
-	fmt.Fprintln(b)
+	return sentence
+}
 
-	// Concept explanations table from schema
-	type row struct{ concept, value, desc string }
-	var rows []row
+func buildConceptRows(c *contract.Contract) []conceptRow {
+	var rows []conceptRow
 
-	if desc := schemaDesc("runtime.workload." + c.Runtime.Workload); desc != "" {
-		rows = append(rows, row{"Workload", c.Runtime.Workload, capitalizeFirst(desc)})
+	// Workload and state type
+	schemaRows := []struct {
+		concept, path, value string
+	}{
+		{"Workload", "runtime.workload." + c.Runtime.Workload, c.Runtime.Workload},
+		{"State", "runtime.state.type." + c.Runtime.State.Type, c.Runtime.State.Type},
 	}
-	if desc := schemaDesc("runtime.state.type." + c.Runtime.State.Type); desc != "" {
-		rows = append(rows, row{"State", c.Runtime.State.Type, capitalizeFirst(desc)})
+	for _, sr := range schemaRows {
+		if desc := schemaDesc(sr.path); desc != "" {
+			rows = append(rows, conceptRow{sr.concept, sr.value, capitalizeFirst(desc)})
+		}
 	}
+
+	// Persistence rows (only when values are set)
+	rows = appendPersistenceRows(rows, c)
+
+	// Data criticality
+	if desc := schemaDesc("runtime.state.dataCriticality." + c.Runtime.State.DataCriticality); desc != "" {
+		rows = append(rows, conceptRow{"Data criticality", c.Runtime.State.DataCriticality, capitalizeFirst(desc)})
+	}
+
+	// Lifecycle rows
+	rows = appendLifecycleRows(rows, c)
+
+	return rows
+}
+
+func appendPersistenceRows(rows []conceptRow, c *contract.Contract) []conceptRow {
 	if scope := c.Runtime.State.Persistence.Scope; scope != "" {
 		if desc := schemaDesc("runtime.state.persistence.scope." + scope); desc != "" {
-			rows = append(rows, row{"Persistence scope", scope, capitalizeFirst(desc)})
+			rows = append(rows, conceptRow{"Persistence scope", scope, capitalizeFirst(desc)})
 		}
 	}
 	if dur := c.Runtime.State.Persistence.Durability; dur != "" {
 		if desc := schemaDesc("runtime.state.persistence.durability." + dur); desc != "" {
-			rows = append(rows, row{"Persistence durability", dur, capitalizeFirst(desc)})
+			rows = append(rows, conceptRow{"Persistence durability", dur, capitalizeFirst(desc)})
 		}
 	}
-	if desc := schemaDesc("runtime.state.dataCriticality." + c.Runtime.State.DataCriticality); desc != "" {
-		rows = append(rows, row{"Data criticality", c.Runtime.State.DataCriticality, capitalizeFirst(desc)})
+	return rows
+}
+
+func appendLifecycleRows(rows []conceptRow, c *contract.Contract) []conceptRow {
+	if c.Runtime.Lifecycle == nil {
+		return rows
 	}
-	if c.Runtime.Lifecycle != nil && c.Runtime.Lifecycle.UpgradeStrategy != "" {
+	if c.Runtime.Lifecycle.UpgradeStrategy != "" {
 		if desc := schemaDesc("runtime.lifecycle.upgradeStrategy." + c.Runtime.Lifecycle.UpgradeStrategy); desc != "" {
-			rows = append(rows, row{"Upgrade strategy", c.Runtime.Lifecycle.UpgradeStrategy, capitalizeFirst(desc)})
+			rows = append(rows, conceptRow{"Upgrade strategy", c.Runtime.Lifecycle.UpgradeStrategy, capitalizeFirst(desc)})
 		}
 	}
-	if c.Runtime.Lifecycle != nil && c.Runtime.Lifecycle.GracefulShutdownSeconds != nil {
-		rows = append(rows, row{"Graceful shutdown", fmt.Sprintf("%ds", *c.Runtime.Lifecycle.GracefulShutdownSeconds), "Time allowed for in-flight requests to complete before termination"})
+	if c.Runtime.Lifecycle.GracefulShutdownSeconds != nil {
+		rows = append(rows, conceptRow{"Graceful shutdown", fmt.Sprintf("%ds", *c.Runtime.Lifecycle.GracefulShutdownSeconds), "Time allowed for in-flight requests to complete before termination"})
 	}
-
-	if len(rows) > 0 {
-		fmt.Fprintln(b, "| Concept | Value | Description |")
-		fmt.Fprintln(b, "|---------|-------|-------------|")
-		for _, r := range rows {
-			fmt.Fprintf(b, "| **%s** | `%s` | %s |\n", r.concept, r.value, r.desc)
-		}
-		fmt.Fprintln(b)
-	}
-
-	fmt.Fprintln(b, "For more information on contract concepts, see the [Contract Reference](https://trianalab.github.io/pacto/contract-reference/).")
-	fmt.Fprintln(b)
+	return rows
 }
 
 func writeTableOfContents(b *strings.Builder, c *contract.Contract) {

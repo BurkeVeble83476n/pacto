@@ -366,6 +366,58 @@ If `gh` is not installed or not authenticated, pacto silently falls back to the 
 
 ---
 
+## `pacto update`
+
+Update pacto to a newer version.
+
+```bash
+pacto update [version]
+```
+
+**Arguments:**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `version` | No | Target version (default: latest release). Accepts with or without `v` prefix. |
+
+**Examples:**
+
+```bash
+# Update to the latest release
+$ pacto update
+Checking for updates...
+Updated pacto v1.0.0 -> v1.2.0
+
+# Update to a specific version
+$ pacto update v1.1.0
+Checking for updates...
+Updated pacto v1.0.0 -> v1.1.0
+
+# Version prefix is optional
+$ pacto update 1.1.0
+```
+
+{: .note }
+`pacto update` is not available on dev builds. If you built from source without version injection, install a release build first.
+
+### Update notifications
+
+When a newer version is available, pacto displays a notification after any command:
+
+```
+A new version of pacto is available: v1.0.0 -> v1.2.0
+Run 'pacto update' to update.
+```
+
+The check runs asynchronously and adds no latency. Results are cached for 24 hours in `~/.config/pacto/update-check.json`.
+
+Notifications are suppressed when:
+- Running a dev build
+- Using `--output-format json`
+- The `PACTO_NO_UPDATE_CHECK=1` environment variable is set
+
+---
+
 ## `pacto version`
 
 Print version information.
@@ -374,6 +426,17 @@ Print version information.
 $ pacto version
 pacto version 1.0.0
 ```
+
+---
+
+## Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `PACTO_NO_UPDATE_CHECK` | Set to `1` to disable automatic update checks |
+| `PACTO_REGISTRY_USERNAME` | Registry username for authentication |
+| `PACTO_REGISTRY_PASSWORD` | Registry password for authentication |
+| `PACTO_REGISTRY_TOKEN` | Registry token for authentication |
 
 ---
 

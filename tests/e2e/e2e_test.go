@@ -854,6 +854,40 @@ func TestVersionCommand(t *testing.T) {
 	assertContains(t, output, "test-e2e")
 }
 
+func TestUpdateCommand(t *testing.T) {
+	t.Run("dev build error", func(t *testing.T) {
+		_, err := runCommandWithVersion(t, nil, "dev", "update")
+		if err == nil {
+			t.Fatal("expected update to fail on dev build")
+		}
+		assertContains(t, err.Error(), "cannot update a dev build")
+	})
+
+	t.Run("specific version dev build error", func(t *testing.T) {
+		_, err := runCommandWithVersion(t, nil, "dev", "update", "v1.0.0")
+		if err == nil {
+			t.Fatal("expected update to fail on dev build")
+		}
+		assertContains(t, err.Error(), "cannot update a dev build")
+	})
+
+	t.Run("command registered", func(t *testing.T) {
+		output, err := runCommand(t, nil, "update", "--help")
+		if err != nil {
+			t.Fatalf("update --help failed: %v", err)
+		}
+		assertContains(t, output, "Downloads and installs the specified version")
+		assertContains(t, output, "update [version]")
+	})
+
+	t.Run("too many args", func(t *testing.T) {
+		_, err := runCommand(t, nil, "update", "v1.0.0", "extra")
+		if err == nil {
+			t.Fatal("expected error for too many arguments")
+		}
+	})
+}
+
 func TestFullLifecycle(t *testing.T) {
 	reg := newTestRegistry(t)
 

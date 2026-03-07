@@ -227,7 +227,7 @@ runtime:
 	}
 }
 
-func TestGraph_FileSchemeDepependency(t *testing.T) {
+func TestGraph_FileSchemeDependency(t *testing.T) {
 	depDir := t.TempDir()
 	depBundleDir := filepath.Join(depDir, "dep-svc")
 	if err := os.MkdirAll(depBundleDir, 0755); err != nil {

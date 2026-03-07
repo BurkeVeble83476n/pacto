@@ -49,15 +49,17 @@ func ShortRef(ref string) string {
 	return name
 }
 
+// treeConnectors returns the connector and child-prefix strings for tree rendering.
+func treeConnectors(isLast bool) (connector, childPrefix string) {
+	if isLast {
+		return "└─ ", "   "
+	}
+	return "├─ ", "│  "
+}
+
 func renderChildren(b *strings.Builder, edges []Edge, prefix string) {
 	for i, edge := range edges {
-		isLast := i == len(edges)-1
-		connector := "├─ "
-		childPrefix := "│  "
-		if isLast {
-			connector = "└─ "
-			childPrefix = "   "
-		}
+		connector, childPrefix := treeConnectors(i == len(edges)-1)
 
 		if edge.Error != "" {
 			fmt.Fprintf(b, "%s%s%s (error: %s)\n", prefix, connector, ShortRef(edge.Ref), edge.Error)

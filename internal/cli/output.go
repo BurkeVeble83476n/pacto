@@ -93,12 +93,7 @@ func printDiffResult(cmd *cobra.Command, result *app.DiffResult, format string) 
 
 func printGraphResult(cmd *cobra.Command, result *app.GraphResult, format string) error {
 	return formatResult(cmd, format, result, func() error {
-		gr := &graph.Result{
-			Root:      result.Root,
-			Cycles:    result.Cycles,
-			Conflicts: result.Conflicts,
-		}
-		_, _ = fmt.Fprint(cmd.OutOrStdout(), graph.RenderTree(gr))
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), graph.RenderTree(result))
 		return nil
 	})
 }

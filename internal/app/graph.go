@@ -14,12 +14,8 @@ type GraphOptions struct {
 	Path string
 }
 
-// GraphResult holds the result of the graph command.
-type GraphResult struct {
-	Root      *graph.Node      `json:"root"`
-	Cycles    [][]string       `json:"cycles,omitempty"`
-	Conflicts []graph.Conflict `json:"conflicts,omitempty"`
-}
+// GraphResult is the result of the graph command.
+type GraphResult = graph.Result
 
 // Graph resolves the dependency graph for a contract.
 func (s *Service) Graph(ctx context.Context, opts GraphOptions) (*GraphResult, error) {
@@ -32,12 +28,7 @@ func (s *Service) Graph(ctx context.Context, opts GraphOptions) (*GraphResult, e
 
 	fetcher := s.newDepFetcher(ref)
 	result := graph.Resolve(ctx, bundle.Contract, fetcher)
-
-	return &GraphResult{
-		Root:      result.Root,
-		Cycles:    result.Cycles,
-		Conflicts: result.Conflicts,
-	}, nil
+	return result, nil
 }
 
 // BundlePuller is the subset of oci.BundleStore needed by the fetcher.

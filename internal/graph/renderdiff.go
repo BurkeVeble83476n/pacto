@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -29,13 +30,7 @@ func renderDiffChildren(b *strings.Builder, children []DiffNode, prefix string) 
 	}
 
 	for i, child := range relevant {
-		isLast := i == len(relevant)-1
-		connector := "├─ "
-		childPrefix := "│  "
-		if isLast {
-			connector = "└─ "
-			childPrefix = "   "
-		}
+		connector, childPrefix := treeConnectors(i == len(relevant)-1)
 
 		label := formatDiffLabel(child)
 		fmt.Fprintf(b, "%s%s%s\n", prefix, connector, label)
@@ -62,13 +57,5 @@ func formatDiffLabel(n DiffNode) string {
 
 // hasChanges returns true if the node or any of its descendants have a change.
 func hasChanges(n DiffNode) bool {
-	if n.Change != nil {
-		return true
-	}
-	for _, child := range n.Children {
-		if hasChanges(child) {
-			return true
-		}
-	}
-	return false
+	return n.Change != nil || slices.ContainsFunc(n.Children, hasChanges)
 }

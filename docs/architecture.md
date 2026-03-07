@@ -60,7 +60,7 @@ The only public package. Contains pure Go types and logic with **zero I/O and ze
 Each CLI command maps to exactly one service method. This layer orchestrates domain logic and infrastructure.
 
 - `Init()`, `Validate()`, `Pack()`, `Push()`, `Pull()`
-- `Diff()`, `Graph()`, `Explain()`, `Generate()`
+- `Diff()`, `Graph()`, `Explain()`, `Generate()`, `Doc()`
 - Shared helpers: `resolveBundle()`, `loadAndValidateLocal()`
 
 ### `internal/cli` — CLI layer

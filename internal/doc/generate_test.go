@@ -155,9 +155,22 @@ func TestGenerate_Full(t *testing.T) {
 		{"TOC Event sub-link", "  - [Event Interface: order-events](#event-interface-order-events)"},
 		{"architecture section", "## Architecture"},
 		{"mermaid block", "```mermaid"},
-		{"mermaid graph direction", "graph TD"},
-		{"auth dep in mermaid", "payments-api --> auth-service-pacto"},
-		{"notification dep in mermaid", "payments-api --> notification-service-pacto"},
+		{"subgraph", "subgraph"},
+		{"service name+version in subgraph", "payments-api v2.1.0"},
+		{"cylinder shape for state", `state[("stateful`},
+		{"persistence scope in cylinder", "· shared persistent"},
+		{"replica range in cylinder", "· 2–10 replicas"},
+		{"external user node", `external(["External User"])`},
+		{"external user arrow", "external --> iface_restapi"},
+		{"rest-api interface node", "iface_restapi"},
+		{"line breaks in mermaid nodes", "<br/>"},
+		{"grpc-api interface node", "iface_grpcapi"},
+		{"order-events interface node", "iface_orderevents"},
+		{"required dependency arrow", `-->|"required`},
+		{"optional dependency arrow", `-.->|"optional`},
+		{"auth dep name in mermaid", `"auth-service-pacto"`},
+		{"notification dep name in mermaid", `"notification-service-pacto"`},
+		{"health label in mermaid", "<br/>♥ health"},
 		{"interfaces section", "## Interfaces"},
 		{"rest-api in interfaces table", "| `rest-api` | `http` | `8080` | `public` |"},
 		{"configuration section", "## Configuration"},
@@ -247,7 +260,6 @@ func TestGenerate_Minimal(t *testing.T) {
 		{"stateless explanation", "Does not retain data"},
 		{"TOC heading", "## Table of Contents"},
 		{"mermaid block", "```mermaid"},
-		{"standalone node in mermaid", "  simple-svc\n"},
 	}
 
 	for _, tc := range mustContain {
@@ -266,7 +278,10 @@ func TestGenerate_Minimal(t *testing.T) {
 		{"no Overview link", "- [Overview]"},
 		{"no Dependencies link", "- [Dependencies]"},
 		{"no Configuration link", "- [Configuration]"},
+		{"no dependency solid arrows", "-->|"},
+		{"no dependency dashed arrows", "-.->|"},
 		{"no scaling replicas", "replicas"},
+		{"no external user", "External User"},
 		{"no Configuration section", "## Configuration"},
 		{"no Dependencies section", "## Dependencies"},
 	}
@@ -609,13 +624,34 @@ func TestDepName(t *testing.T) {
 	}
 }
 
+func TestSanitizeMermaidID(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"rest-api", "restapi"},
+		{"ghcr.io/acme/svc@sha256:abc", "ghcrioacmesvcsha256abc"},
+		{"simple", "simple"},
+	}
+	for _, tt := range tests {
+		got := sanitizeMermaidID(tt.input)
+		if got != tt.want {
+			t.Errorf("sanitizeMermaidID(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
 func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 	c := &contract.Contract{
 		PactoVersion: "1.0",
 		Service:      contract.ServiceIdentity{Name: "frontend", Version: "1.0.0"},
+		Interfaces: []contract.Interface{
+			{Name: "http", Type: "http", Port: intPtr(3000), Visibility: "public"},
+		},
 		Runtime: contract.Runtime{
 			Workload: "service",
 			State:    contract.State{Type: "stateless", DataCriticality: "low"},
+			Health:   contract.Health{Interface: "http", Path: "/health"},
 		},
 	}
 	gr := &graph.Result{
@@ -655,7 +691,12 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 
 	mustContain := []string{
 		"```mermaid",
-		"graph TD",
+		"graph LR",
+		"subgraph",
+		"frontend v1.0.0",
+		`external(["External User"])`,
+		"iface_http",
+		"<br/>♥ health",
 		"frontend --> backend",
 		"frontend --> keycloak",
 		"backend --> postgres",
@@ -666,27 +707,6 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 		if !strings.Contains(md, s) {
 			t.Errorf("expected %q in output:\n%s", s, md)
 		}
-	}
-}
-
-func TestWriteMermaidDiagram_StandaloneNode(t *testing.T) {
-	c := &contract.Contract{
-		PactoVersion: "1.0",
-		Service:      contract.ServiceIdentity{Name: "standalone", Version: "1.0.0"},
-		Interfaces:   []contract.Interface{{Name: "api", Type: "http", Port: intPtr(8080)}},
-		Runtime: contract.Runtime{
-			Workload: "service",
-			State:    contract.State{Type: "stateless", DataCriticality: "low"},
-		},
-	}
-
-	md, err := Generate(c, fstest.MapFS{}, nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !strings.Contains(md, "  standalone\n") {
-		t.Errorf("expected standalone node in Mermaid, got:\n%s", md)
 	}
 }
 

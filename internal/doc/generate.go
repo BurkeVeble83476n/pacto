@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -234,6 +235,12 @@ func writeTableOfContents(b *strings.Builder, c *contract.Contract) {
 	fmt.Fprintln(b)
 }
 
+var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
+
+func sanitizeMermaidID(s string) string {
+	return nonAlphanumeric.ReplaceAllString(s, "")
+}
+
 func depName(ref string) string {
 	// Strip tag or digest suffix
 	name := ref
@@ -254,16 +261,70 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 	fmt.Fprintln(b, "## Architecture")
 	fmt.Fprintln(b)
 	fmt.Fprintln(b, "```mermaid")
-	fmt.Fprintln(b, "graph TD")
+	fmt.Fprintln(b, "graph LR")
 
+	// Service subgraph
+	svcID := sanitizeMermaidID(c.Service.Name)
+	svcLabel := fmt.Sprintf("%s v%s", c.Service.Name, c.Service.Version)
+	fmt.Fprintf(b, "  subgraph %s[\"%s\"]\n", svcID, svcLabel)
+	fmt.Fprintln(b, "    direction TB")
+	stateLabel := fmt.Sprintf("%s · %s criticality", c.Runtime.State.Type, c.Runtime.State.DataCriticality)
+	if c.Runtime.State.Persistence.Scope != "" {
+		stateLabel += fmt.Sprintf(" · %s %s", c.Runtime.State.Persistence.Scope, c.Runtime.State.Persistence.Durability)
+	}
+	if c.Scaling != nil {
+		stateLabel += fmt.Sprintf(" · %d–%d replicas", c.Scaling.Min, c.Scaling.Max)
+	}
+	fmt.Fprintf(b, "    state[(\"%s\")]\n", stateLabel)
+	fmt.Fprintln(b, "  end")
+	fmt.Fprintln(b)
+
+	// External user node for public interfaces
+	hasPublic := false
+	for _, iface := range c.Interfaces {
+		if iface.Visibility == contract.VisibilityPublic {
+			hasPublic = true
+			break
+		}
+	}
+	if hasPublic {
+		fmt.Fprintln(b, "  external([\"External User\"])")
+	}
+
+	// Interface nodes
+	for _, iface := range c.Interfaces {
+		nodeID := "iface_" + sanitizeMermaidID(iface.Name)
+		label := iface.Name + "<br/>" + iface.Type
+		if iface.Port != nil {
+			label += fmt.Sprintf(" :%d", *iface.Port)
+		}
+		if iface.Visibility != "" {
+			label += "<br/>" + iface.Visibility
+		}
+		if iface.Name == c.Runtime.Health.Interface {
+			label += "<br/>♥ health"
+		}
+		fmt.Fprintf(b, "  %s[\"%s\"] --> %s\n", nodeID, label, svcID)
+		if iface.Visibility == contract.VisibilityPublic {
+			fmt.Fprintf(b, "  external --> %s\n", nodeID)
+		}
+	}
+
+	// Dependency edges — use full transitive graph when available
 	if gr != nil && gr.Root != nil && len(gr.Root.Dependencies) > 0 {
+		fmt.Fprintln(b)
 		writeMermaidEdges(b, gr.Root)
 	} else if len(c.Dependencies) > 0 {
+		fmt.Fprintln(b)
 		for _, dep := range c.Dependencies {
-			fmt.Fprintf(b, "  %s --> %s\n", c.Service.Name, depName(dep.Ref))
+			name := depName(dep.Ref)
+			depID := "dep_" + sanitizeMermaidID(name)
+			if dep.Required {
+				fmt.Fprintf(b, "  %s -->|\"required · %s\"| %s[\"%s\"]\n", svcID, dep.Compatibility, depID, name)
+			} else {
+				fmt.Fprintf(b, "  %s -.->|\"optional · %s\"| %s[\"%s\"]\n", svcID, dep.Compatibility, depID, name)
+			}
 		}
-	} else {
-		fmt.Fprintf(b, "  %s\n", c.Service.Name)
 	}
 
 	fmt.Fprintln(b, "```")

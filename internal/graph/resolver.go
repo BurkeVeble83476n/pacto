@@ -15,10 +15,11 @@ type ContractFetcher interface {
 
 // Node represents a service in the dependency graph.
 type Node struct {
-	Name         string `json:"name"`
-	Version      string `json:"version"`
-	Ref          string `json:"ref,omitempty"`
-	Dependencies []Edge `json:"dependencies,omitempty"`
+	Name         string             `json:"name"`
+	Version      string             `json:"version"`
+	Ref          string             `json:"ref,omitempty"`
+	Dependencies []Edge             `json:"dependencies,omitempty"`
+	Contract     *contract.Contract `json:"-"`
 }
 
 // Edge represents a dependency relationship.
@@ -44,8 +45,9 @@ type Result struct {
 // are shown without resolution.
 func Resolve(ctx context.Context, c *contract.Contract, fetcher ContractFetcher) *Result {
 	root := &Node{
-		Name:    c.Service.Name,
-		Version: c.Service.Version,
+		Name:     c.Service.Name,
+		Version:  c.Service.Version,
+		Contract: c,
 	}
 
 	visited := map[string]*Node{}
@@ -101,9 +103,10 @@ func resolveEdge(ctx context.Context, dep contract.Dependency, fetcher ContractF
 	}
 
 	node := &Node{
-		Name:    depContract.Service.Name,
-		Version: depContract.Service.Version,
-		Ref:     dep.Ref,
+		Name:     depContract.Service.Name,
+		Version:  depContract.Service.Version,
+		Ref:      dep.Ref,
+		Contract: depContract,
 	}
 	visited[dep.Ref] = node
 

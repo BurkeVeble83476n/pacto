@@ -78,7 +78,6 @@ func Generate(c *contract.Contract, fsys fs.FS, gr *graph.Result) (string, error
 	writeInterfaces(&b, c, fsys)
 	writeConfiguration(&b, c, fsys)
 	writeDependencies(&b, c)
-	writeContainerImage(&b, c)
 
 	fmt.Fprintln(&b, "---")
 	fmt.Fprintln(&b)
@@ -229,9 +228,6 @@ func writeTableOfContents(b *strings.Builder, c *contract.Contract) {
 	if len(c.Dependencies) > 0 {
 		fmt.Fprintln(b, "- [Dependencies](#dependencies)")
 	}
-	if c.Service.Image != nil {
-		fmt.Fprintln(b, "- [Container Image](#container-image)")
-	}
 	fmt.Fprintln(b)
 }
 
@@ -263,51 +259,37 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 	fmt.Fprintln(b, "```mermaid")
 	fmt.Fprintln(b, "graph LR")
 
-	// Service subgraph
-	svcID := sanitizeMermaidID(c.Service.Name)
-	svcLabel := fmt.Sprintf("%s v%s", c.Service.Name, c.Service.Version)
-	fmt.Fprintf(b, "  subgraph %s[\"%s\"]\n", svcID, svcLabel)
-	fmt.Fprintln(b, "    direction TB")
-	stateLabel := fmt.Sprintf("%s · %s criticality", c.Runtime.State.Type, c.Runtime.State.DataCriticality)
-	if c.Runtime.State.Persistence.Scope != "" {
-		stateLabel += fmt.Sprintf(" · %s %s", c.Runtime.State.Persistence.Scope, c.Runtime.State.Persistence.Durability)
+	// Collect all contracts (root + dependencies)
+	allContracts := []*contract.Contract{c}
+	if gr != nil && gr.Root != nil {
+		for _, node := range collectUniqueNodes(gr.Root) {
+			if node.Contract != nil {
+				allContracts = append(allContracts, node.Contract)
+			}
+		}
 	}
-	if c.Scaling != nil {
-		stateLabel += fmt.Sprintf(" · %d–%d replicas", c.Scaling.Min, c.Scaling.Max)
-	}
-	fmt.Fprintf(b, "    state[(\"%s\")]\n", stateLabel)
-	fmt.Fprintln(b, "  end")
-	fmt.Fprintln(b)
 
-	// External user node for public interfaces
+	// Render external user node if any service has public interfaces
 	hasPublic := false
-	for _, iface := range c.Interfaces {
-		if iface.Visibility == contract.VisibilityPublic {
-			hasPublic = true
+	for _, sc := range allContracts {
+		for _, iface := range sc.Interfaces {
+			if iface.Visibility == contract.VisibilityPublic {
+				hasPublic = true
+				break
+			}
+		}
+		if hasPublic {
 			break
 		}
 	}
 	if hasPublic {
 		fmt.Fprintln(b, "  external([\"External User\"])")
+		fmt.Fprintln(b)
 	}
 
-	// Interface nodes
-	for _, iface := range c.Interfaces {
-		nodeID := "iface_" + sanitizeMermaidID(iface.Name)
-		label := iface.Name + "<br/>" + iface.Type
-		if iface.Port != nil {
-			label += fmt.Sprintf(" :%d", *iface.Port)
-		}
-		if iface.Visibility != "" {
-			label += "<br/>" + iface.Visibility
-		}
-		if iface.Name == c.Runtime.Health.Interface {
-			label += "<br/>♥ health"
-		}
-		fmt.Fprintf(b, "  %s[\"%s\"] --> %s\n", nodeID, label, svcID)
-		if iface.Visibility == contract.VisibilityPublic {
-			fmt.Fprintf(b, "  external --> %s\n", nodeID)
-		}
+	// Render subgraphs and interface nodes for all services
+	for _, sc := range allContracts {
+		writeServiceSubgraph(b, sc, hasPublic)
 	}
 
 	// Dependency edges — use full transitive graph when available
@@ -316,6 +298,7 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 		writeMermaidEdges(b, gr.Root)
 	} else if len(c.Dependencies) > 0 {
 		fmt.Fprintln(b)
+		svcID := sanitizeMermaidID(c.Service.Name)
 		for _, dep := range c.Dependencies {
 			name := depName(dep.Ref)
 			depID := "dep_" + sanitizeMermaidID(name)
@@ -329,6 +312,63 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 
 	fmt.Fprintln(b, "```")
 	fmt.Fprintln(b)
+}
+
+func writeServiceSubgraph(b *strings.Builder, c *contract.Contract, hasExternal bool) {
+	svcID := sanitizeMermaidID(c.Service.Name)
+	svcLabel := fmt.Sprintf("%s v%s", c.Service.Name, c.Service.Version)
+	fmt.Fprintf(b, "  subgraph %s[\"%s\"]\n", svcID, svcLabel)
+	fmt.Fprintln(b, "    direction TB")
+	stateLabel := fmt.Sprintf("%s · %s criticality", c.Runtime.State.Type, c.Runtime.State.DataCriticality)
+	if c.Runtime.State.Persistence.Scope != "" {
+		stateLabel += fmt.Sprintf(" · %s %s", c.Runtime.State.Persistence.Scope, c.Runtime.State.Persistence.Durability)
+	}
+	if c.Scaling != nil {
+		stateLabel += fmt.Sprintf(" · %d–%d replicas", c.Scaling.Min, c.Scaling.Max)
+	}
+	fmt.Fprintf(b, "    %s_state[(\"%s\")]\n", svcID, stateLabel)
+	fmt.Fprintln(b, "  end")
+	fmt.Fprintln(b)
+
+	// Interface nodes
+	for _, iface := range c.Interfaces {
+		nodeID := svcID + "_iface_" + sanitizeMermaidID(iface.Name)
+		label := iface.Name + "<br/>" + iface.Type
+		if iface.Port != nil {
+			label += fmt.Sprintf(" :%d", *iface.Port)
+		}
+		if iface.Visibility != "" {
+			label += "<br/>" + iface.Visibility
+		}
+		if iface.Name == c.Runtime.Health.Interface {
+			label += "<br/>♥ health"
+		}
+		fmt.Fprintf(b, "  %s[\"%s\"] --> %s\n", nodeID, label, svcID)
+		if hasExternal && iface.Visibility == contract.VisibilityPublic {
+			fmt.Fprintf(b, "  external --> %s\n", nodeID)
+		}
+	}
+}
+
+func collectUniqueNodes(root *graph.Node) []*graph.Node {
+	var nodes []*graph.Node
+	seen := map[string]bool{}
+	walkCollectNodes(root, seen, &nodes)
+	return nodes
+}
+
+func walkCollectNodes(node *graph.Node, seen map[string]bool, nodes *[]*graph.Node) {
+	if node == nil {
+		return
+	}
+	for _, edge := range node.Dependencies {
+		if edge.Node == nil || edge.Shared || seen[edge.Node.Name] {
+			continue
+		}
+		seen[edge.Node.Name] = true
+		*nodes = append(*nodes, edge.Node)
+		walkCollectNodes(edge.Node, seen, nodes)
+	}
 }
 
 func writeMermaidEdges(b *strings.Builder, node *graph.Node) {
@@ -539,20 +579,6 @@ func writeDependencies(b *strings.Builder, c *contract.Contract) {
 		fmt.Fprintf(b, "| `%s` | `%s` | %s |\n", dep.Ref, dep.Compatibility, req)
 	}
 	fmt.Fprintln(b)
-}
-
-func writeContainerImage(b *strings.Builder, c *contract.Contract) {
-	if c.Service.Image == nil {
-		return
-	}
-
-	fmt.Fprintln(b, "## Container Image")
-	fmt.Fprintln(b)
-	fmt.Fprintf(b, "**Ref:** `%s`\n\n", c.Service.Image.Ref)
-	if c.Service.Image.Private {
-		fmt.Fprintln(b, "**Private:** Yes")
-		fmt.Fprintln(b)
-	}
 }
 
 func writeMetadataFooter(b *strings.Builder, c *contract.Contract) {

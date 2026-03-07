@@ -157,15 +157,15 @@ func TestGenerate_Full(t *testing.T) {
 		{"mermaid block", "```mermaid"},
 		{"subgraph", "subgraph"},
 		{"service name+version in subgraph", "payments-api v2.1.0"},
-		{"cylinder shape for state", `state[("stateful`},
+		{"cylinder shape for state", `paymentsapi_state[("stateful`},
 		{"persistence scope in cylinder", "· shared persistent"},
 		{"replica range in cylinder", "· 2–10 replicas"},
 		{"external user node", `external(["External User"])`},
-		{"external user arrow", "external --> iface_restapi"},
-		{"rest-api interface node", "iface_restapi"},
+		{"external user arrow", "external --> paymentsapi_iface_restapi"},
+		{"rest-api interface node", "paymentsapi_iface_restapi"},
 		{"line breaks in mermaid nodes", "<br/>"},
-		{"grpc-api interface node", "iface_grpcapi"},
-		{"order-events interface node", "iface_orderevents"},
+		{"grpc-api interface node", "paymentsapi_iface_grpcapi"},
+		{"order-events interface node", "paymentsapi_iface_orderevents"},
 		{"required dependency arrow", `-->|"required`},
 		{"optional dependency arrow", `-.->|"optional`},
 		{"auth dep name in mermaid", `"auth-service-pacto"`},
@@ -186,10 +186,6 @@ func TestGenerate_Full(t *testing.T) {
 		{"auth dependency", "| `ghcr.io/acme/auth-service-pacto@sha256:abc123` | `^2.0.0` | Yes |"},
 		{"notification dependency", "| `ghcr.io/acme/notification-service-pacto:1.0.0` | `~1.0.0` | No |"},
 		{"image ref in description", "packaged as `ghcr.io/acme/payments-api:2.1.0`"},
-		{"container image section", "## Container Image"},
-		{"image ref", "**Ref:** `ghcr.io/acme/payments-api:2.1.0`"},
-		{"private flag", "**Private:** Yes"},
-		{"container image in TOC", "- [Container Image](#container-image)"},
 		{"health path in interface", "owns the health path under `/health`"},
 		{"initial delay in interface", "requires an initial delay of `15s`"},
 		{"verbal description rest-api", "The `rest-api` interface is `public` and exposes port `8080`."},
@@ -654,18 +650,59 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 			Health:   contract.Health{Interface: "http", Path: "/health"},
 		},
 	}
+	backendContract := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "backend", Version: "1.0.0"},
+		Interfaces: []contract.Interface{
+			{Name: "api", Type: "http", Port: intPtr(8080), Visibility: "public"},
+		},
+		Runtime: contract.Runtime{
+			Workload: "service",
+			State:    contract.State{Type: "stateless", DataCriticality: "low"},
+			Health:   contract.Health{Interface: "api", Path: "/health"},
+		},
+	}
+	postgresContract := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "postgres", Version: "16.4.0"},
+		Interfaces: []contract.Interface{
+			{Name: "tcp", Type: "http", Port: intPtr(5432), Visibility: "internal"},
+		},
+		Runtime: contract.Runtime{
+			Workload: "service",
+			State: contract.State{
+				Type:            "stateful",
+				DataCriticality: "high",
+				Persistence:     contract.Persistence{Scope: "local", Durability: "persistent"},
+			},
+			Health: contract.Health{Interface: "tcp", Path: "/health"},
+		},
+		Scaling: &contract.Scaling{Min: 1, Max: 1},
+	}
+	keycloakContract := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "keycloak", Version: "26.0.0"},
+		Interfaces: []contract.Interface{
+			{Name: "http", Type: "http", Port: intPtr(8080), Visibility: "public"},
+		},
+		Runtime: contract.Runtime{
+			Workload: "service",
+			State:    contract.State{Type: "stateless", DataCriticality: "low"},
+			Health:   contract.Health{Interface: "http", Path: "/health"},
+		},
+	}
+
 	gr := &graph.Result{
 		Root: &graph.Node{
-			Name:    "frontend",
-			Version: "1.0.0",
+			Name:     "frontend",
+			Version:  "1.0.0",
+			Contract: c,
 			Dependencies: []graph.Edge{
 				{
 					Ref: "reg/backend:1.0.0",
 					Node: &graph.Node{
-						Name:    "backend",
-						Version: "1.0.0",
+						Name:     "backend",
+						Version:  "1.0.0",
+						Contract: backendContract,
 						Dependencies: []graph.Edge{
-							{Ref: "reg/postgres:16.4.0", Node: &graph.Node{Name: "postgres", Version: "16.4.0"}},
+							{Ref: "reg/postgres:16.4.0", Node: &graph.Node{Name: "postgres", Version: "16.4.0", Contract: postgresContract}},
 							{Ref: "reg/keycloak:26.0.0", Shared: true, Node: &graph.Node{Name: "keycloak", Version: "26.0.0"}},
 						},
 					},
@@ -673,10 +710,11 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 				{
 					Ref: "reg/keycloak:26.0.0",
 					Node: &graph.Node{
-						Name:    "keycloak",
-						Version: "26.0.0",
+						Name:     "keycloak",
+						Version:  "26.0.0",
+						Contract: keycloakContract,
 						Dependencies: []graph.Edge{
-							{Ref: "reg/postgres:16.4.0", Node: &graph.Node{Name: "postgres", Version: "16.4.0"}},
+							{Ref: "reg/postgres:16.4.0", Shared: true, Node: &graph.Node{Name: "postgres", Version: "16.4.0"}},
 						},
 					},
 				},
@@ -692,11 +730,26 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 	mustContain := []string{
 		"```mermaid",
 		"graph LR",
-		"subgraph",
-		"frontend v1.0.0",
+		// Root subgraph
+		`subgraph frontend["frontend v1.0.0"]`,
 		`external(["External User"])`,
-		"iface_http",
+		"frontend_iface_http",
 		"<br/>♥ health",
+		// External user arrows to all public interfaces
+		"external --> frontend_iface_http",
+		"external --> backend_iface_api",
+		"external --> keycloak_iface_http",
+		// Backend subgraph
+		`subgraph backend["backend v1.0.0"]`,
+		"backend_iface_api",
+		// Postgres subgraph with rich state
+		`subgraph postgres["postgres v16.4.0"]`,
+		`postgres_state[("stateful · high criticality · local persistent · 1–1 replicas")]`,
+		"postgres_iface_tcp",
+		// Keycloak subgraph
+		`subgraph keycloak["keycloak v26.0.0"]`,
+		"keycloak_iface_http",
+		// Transitive edges
 		"frontend --> backend",
 		"frontend --> keycloak",
 		"backend --> postgres",
@@ -779,5 +832,13 @@ func TestWalkMermaidEdges_NilNode(t *testing.T) {
 	walkMermaidEdges(&b, nil, map[string]bool{})
 	if b.Len() != 0 {
 		t.Errorf("expected empty output for nil node, got %q", b.String())
+	}
+}
+
+func TestWalkCollectNodes_NilNode(t *testing.T) {
+	var nodes []*graph.Node
+	walkCollectNodes(nil, map[string]bool{}, &nodes)
+	if len(nodes) != 0 {
+		t.Errorf("expected no nodes for nil input, got %d", len(nodes))
 	}
 }

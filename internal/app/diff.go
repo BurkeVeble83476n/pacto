@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/trianalab/pacto/internal/diff"
+	"github.com/trianalab/pacto/internal/graph"
 )
 
 // DiffOptions holds options for the diff command.
@@ -15,10 +16,11 @@ type DiffOptions struct {
 
 // DiffResult holds the result of the diff command.
 type DiffResult struct {
-	OldPath        string        `json:"oldPath"`
-	NewPath        string        `json:"newPath"`
-	Classification string        `json:"classification"`
-	Changes        []diff.Change `json:"changes"`
+	OldPath        string           `json:"oldPath"`
+	NewPath        string           `json:"newPath"`
+	Classification string           `json:"classification"`
+	Changes        []diff.Change    `json:"changes"`
+	GraphDiff      *graph.GraphDiff `json:"graphDiff,omitempty"`
 }
 
 // Diff compares two contracts and produces a classified change set.
@@ -35,10 +37,20 @@ func (s *Service) Diff(ctx context.Context, opts DiffOptions) (*DiffResult, erro
 
 	result := diff.Compare(oldBundle.Contract, newBundle.Contract, oldBundle.FS, newBundle.FS)
 
+	var fetcher graph.ContractFetcher
+	if s.BundleStore != nil {
+		fetcher = &bundleStoreFetcher{store: s.BundleStore}
+	}
+
+	oldGraph := graph.Resolve(ctx, oldBundle.Contract, fetcher)
+	newGraph := graph.Resolve(ctx, newBundle.Contract, fetcher)
+	gd := graph.DiffGraphs(oldGraph, newGraph)
+
 	return &DiffResult{
 		OldPath:        opts.OldPath,
 		NewPath:        opts.NewPath,
 		Classification: result.Classification.String(),
 		Changes:        result.Changes,
+		GraphDiff:      gd,
 	}, nil
 }

@@ -174,6 +174,60 @@ func TestPrintDiffResult_WithChanges(t *testing.T) {
 	}
 }
 
+func TestPrintDiffResult_WithGraphDiff(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "NON_BREAKING",
+		GraphDiff: &graph.GraphDiff{
+			Root: graph.DiffNode{
+				Name: "svc",
+				Children: []graph.DiffNode{
+					{
+						Name:    "redis",
+						Version: "7.2.0",
+						Change:  &graph.GraphChange{Name: "redis", ChangeType: graph.AddedNode, NewVersion: "7.2.0"},
+					},
+				},
+			},
+			Changes: []graph.GraphChange{
+				{Name: "redis", ChangeType: graph.AddedNode, NewVersion: "7.2.0"},
+			},
+		},
+	}
+	if err := printDiffResult(cmd, result, "text"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Dependency graph changes:") {
+		t.Errorf("expected graph diff section, got %q", out)
+	}
+	if !strings.Contains(out, "redis") {
+		t.Errorf("expected redis in graph diff, got %q", out)
+	}
+	if !strings.Contains(out, "+7.2.0") {
+		t.Errorf("expected +7.2.0 in graph diff, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_NoGraphDiffChanges(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "NON_BREAKING",
+		GraphDiff:      &graph.GraphDiff{Root: graph.DiffNode{Name: "svc"}},
+	}
+	if err := printDiffResult(cmd, result, "text"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "Dependency graph changes:") {
+		t.Errorf("did not expect graph diff section when no changes, got %q", out)
+	}
+}
+
 func TestPrintGraphResult_Simple(t *testing.T) {
 	cmd, buf := testCmd()
 	result := &app.GraphResult{

@@ -75,13 +75,16 @@ func printDiffResult(cmd *cobra.Command, result *app.DiffResult, format string) 
 		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Classification: %s\n", result.Classification)
 		if len(result.Changes) == 0 {
 			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No changes detected.")
-			return nil
+		} else {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Changes (%d):\n", len(result.Changes))
+			for _, c := range result.Changes {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  [%s] %s (%s): %s\n",
+					c.Classification, c.Path, c.Type, c.Reason)
+			}
 		}
 
-		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Changes (%d):\n", len(result.Changes))
-		for _, c := range result.Changes {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  [%s] %s (%s): %s\n",
-				c.Classification, c.Path, c.Type, c.Reason)
+		if rendered := graph.RenderDiffTree(result.GraphDiff); rendered != "" {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "\nDependency graph changes:\n%s", rendered)
 		}
 
 		return nil

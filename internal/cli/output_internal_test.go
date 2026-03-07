@@ -208,13 +208,13 @@ func TestPrintGraphResult_WithDepsAndCyclesAndConflicts(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "dep@1.0.0") {
-		t.Errorf("expected resolved dep, got %q", out)
+	if !strings.Contains(out, "├─ dep@1.0.0") {
+		t.Errorf("expected tree-style dep, got %q", out)
 	}
 	if !strings.Contains(out, "fetch failed") {
 		t.Errorf("expected error edge, got %q", out)
 	}
-	if !strings.Contains(out, "ghcr.io/bare:1.0.0") {
+	if !strings.Contains(out, "bare:1.0.0") {
 		t.Errorf("expected bare ref, got %q", out)
 	}
 	if !strings.Contains(out, "Cycles (1)") {

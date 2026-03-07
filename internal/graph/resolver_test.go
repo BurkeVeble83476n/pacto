@@ -336,14 +336,63 @@ func TestResolve_DiamondDependency(t *testing.T) {
 	if bEdge.Node.Dependencies[0].Node == nil {
 		t.Error("expected D to be resolved under B")
 	}
-	// C's reference to D should hit visited[dep.Ref] and return without node
+	// C's reference to D should be marked as shared with a shallow node
 	cEdge := result.Root.Dependencies[1]
 	if cEdge.Node == nil || len(cEdge.Node.Dependencies) != 1 {
 		t.Fatal("expected C to have 1 dependency (D)")
 	}
-	// The edge for D under C should have no Node because it was already visited
-	if cEdge.Node.Dependencies[0].Node != nil {
-		t.Error("expected D under C to NOT have a resolved node (visited skip)")
+	dUnderC := cEdge.Node.Dependencies[0]
+	if dUnderC.Node == nil {
+		t.Fatal("expected D under C to have a shallow node")
+	}
+	if dUnderC.Node.Name != "svc-d" {
+		t.Errorf("expected svc-d, got %s", dUnderC.Node.Name)
+	}
+	if !dUnderC.Shared {
+		t.Error("expected D under C to be marked as shared")
+	}
+	if len(dUnderC.Node.Dependencies) != 0 {
+		t.Error("expected shared node to have no dependencies")
+	}
+}
+
+func TestResolve_SharedEdgeHasNodeInfo(t *testing.T) {
+	// When the same ref is encountered twice, the second edge should be
+	// marked Shared and carry name/version but no children.
+	fetcher := &mockFetcher{
+		contracts: map[string]*contract.Contract{
+			"registry.io/svc-b:1.0.0": {
+				Service: contract.ServiceIdentity{Name: "svc-b", Version: "1.0.0"},
+			},
+		},
+	}
+
+	c := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "svc-a", Version: "1.0.0"},
+		Dependencies: []contract.Dependency{
+			{Ref: "registry.io/svc-b:1.0.0", Required: true, Compatibility: "^1.0.0"},
+			{Ref: "registry.io/svc-b:1.0.0", Required: true, Compatibility: "^1.0.0"},
+		},
+	}
+
+	result := Resolve(context.Background(), c, fetcher)
+
+	if len(result.Root.Dependencies) != 2 {
+		t.Fatalf("expected 2 dependencies, got %d", len(result.Root.Dependencies))
+	}
+	first := result.Root.Dependencies[0]
+	if first.Shared {
+		t.Error("first occurrence should not be shared")
+	}
+	second := result.Root.Dependencies[1]
+	if !second.Shared {
+		t.Error("second occurrence should be shared")
+	}
+	if second.Node == nil {
+		t.Fatal("shared edge should have node info")
+	}
+	if second.Node.Name != "svc-b" {
+		t.Errorf("expected svc-b, got %s", second.Node.Name)
 	}
 }
 

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/internal/validation"
 	"github.com/trianalab/pacto/pkg/contract"
 )
@@ -66,13 +66,14 @@ func extractEnumDescriptions(props map[string]interface{}, prefix string, dst ma
 }
 
 // Generate produces a Markdown document from a contract and its bundle filesystem.
-func Generate(c *contract.Contract, fsys fs.FS) (string, error) {
+// If gr is non-nil, the Mermaid diagram will show the full transitive dependency graph.
+func Generate(c *contract.Contract, fsys fs.FS, gr *graph.Result) (string, error) {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "# %s\n\n", c.Service.Name)
 	writeDescription(&b, c)
 	writeTableOfContents(&b, c)
-	writeMermaidDiagram(&b, c)
+	writeMermaidDiagram(&b, c, gr)
 	writeInterfaces(&b, c, fsys)
 	writeConfiguration(&b, c, fsys)
 	writeDependencies(&b, c)
@@ -233,12 +234,6 @@ func writeTableOfContents(b *strings.Builder, c *contract.Contract) {
 	fmt.Fprintln(b)
 }
 
-var nonAlphanumeric = regexp.MustCompile(`[^a-zA-Z0-9]`)
-
-func sanitizeMermaidID(s string) string {
-	return nonAlphanumeric.ReplaceAllString(s, "")
-}
-
 func depName(ref string) string {
 	// Strip tag or digest suffix
 	name := ref
@@ -255,75 +250,49 @@ func depName(ref string) string {
 	return name
 }
 
-func writeMermaidDiagram(b *strings.Builder, c *contract.Contract) {
+func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Result) {
 	fmt.Fprintln(b, "## Architecture")
 	fmt.Fprintln(b)
 	fmt.Fprintln(b, "```mermaid")
-	fmt.Fprintln(b, "graph LR")
+	fmt.Fprintln(b, "graph TD")
 
-	// Service subgraph
-	svcID := sanitizeMermaidID(c.Service.Name)
-	svcLabel := fmt.Sprintf("%s v%s", c.Service.Name, c.Service.Version)
-	fmt.Fprintf(b, "  subgraph %s[\"%s\"]\n", svcID, svcLabel)
-	fmt.Fprintln(b, "    direction TB")
-	stateLabel := fmt.Sprintf("%s \u00b7 %s criticality", c.Runtime.State.Type, c.Runtime.State.DataCriticality)
-	if c.Runtime.State.Persistence.Scope != "" {
-		stateLabel += fmt.Sprintf(" \u00b7 %s %s", c.Runtime.State.Persistence.Scope, c.Runtime.State.Persistence.Durability)
-	}
-	if c.Scaling != nil {
-		stateLabel += fmt.Sprintf(" \u00b7 %d\u2013%d replicas", c.Scaling.Min, c.Scaling.Max)
-	}
-	fmt.Fprintf(b, "    state[(\"%s\")]\n", stateLabel)
-	fmt.Fprintln(b, "  end")
-	fmt.Fprintln(b)
-
-	// External user node for public interfaces
-	hasPublic := false
-	for _, iface := range c.Interfaces {
-		if iface.Visibility == contract.VisibilityPublic {
-			hasPublic = true
-			break
-		}
-	}
-	if hasPublic {
-		fmt.Fprintln(b, "  external([\"External User\"])")
-	}
-
-	// Interface nodes
-	for _, iface := range c.Interfaces {
-		nodeID := "iface_" + sanitizeMermaidID(iface.Name)
-		label := iface.Name + "<br/>" + iface.Type
-		if iface.Port != nil {
-			label += fmt.Sprintf(" :%d", *iface.Port)
-		}
-		if iface.Visibility != "" {
-			label += "<br/>" + iface.Visibility
-		}
-		if iface.Name == c.Runtime.Health.Interface {
-			label += "<br/>♥ health"
-		}
-		fmt.Fprintf(b, "  %s[\"%s\"] --> %s\n", nodeID, label, svcID)
-		if iface.Visibility == contract.VisibilityPublic {
-			fmt.Fprintf(b, "  external --> %s\n", nodeID)
-		}
-	}
-
-	// Dependency edges
-	if len(c.Dependencies) > 0 {
-		fmt.Fprintln(b)
+	if gr != nil && gr.Root != nil && len(gr.Root.Dependencies) > 0 {
+		writeMermaidEdges(b, gr.Root)
+	} else if len(c.Dependencies) > 0 {
 		for _, dep := range c.Dependencies {
-			name := depName(dep.Ref)
-			depID := "dep_" + sanitizeMermaidID(name)
-			if dep.Required {
-				fmt.Fprintf(b, "  %s -->|\"required · %s\"| %s[\"%s\"]\n", svcID, dep.Compatibility, depID, name)
-			} else {
-				fmt.Fprintf(b, "  %s -.->|\"optional · %s\"| %s[\"%s\"]\n", svcID, dep.Compatibility, depID, name)
-			}
+			fmt.Fprintf(b, "  %s --> %s\n", c.Service.Name, depName(dep.Ref))
 		}
+	} else {
+		fmt.Fprintf(b, "  %s\n", c.Service.Name)
 	}
 
 	fmt.Fprintln(b, "```")
 	fmt.Fprintln(b)
+}
+
+func writeMermaidEdges(b *strings.Builder, node *graph.Node) {
+	seen := map[string]bool{}
+	walkMermaidEdges(b, node, seen)
+}
+
+func walkMermaidEdges(b *strings.Builder, node *graph.Node, seen map[string]bool) {
+	if node == nil {
+		return
+	}
+	for _, edge := range node.Dependencies {
+		if edge.Node == nil {
+			continue
+		}
+		key := node.Name + "-->" + edge.Node.Name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		fmt.Fprintf(b, "  %s --> %s\n", node.Name, edge.Node.Name)
+		if !edge.Shared {
+			walkMermaidEdges(b, edge.Node, seen)
+		}
+	}
 }
 
 func writeInterfaces(b *strings.Builder, c *contract.Contract, fsys fs.FS) {

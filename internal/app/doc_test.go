@@ -10,6 +10,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
@@ -76,7 +77,7 @@ func TestDoc_NotFound(t *testing.T) {
 
 func TestDoc_GenerateError(t *testing.T) {
 	original := generateDoc
-	generateDoc = func(_ *contract.Contract, _ fs.FS) (string, error) {
+	generateDoc = func(_ *contract.Contract, _ fs.FS, _ *graph.Result) (string, error) {
 		return "", fmt.Errorf("generate failed")
 	}
 	t.Cleanup(func() { generateDoc = original })

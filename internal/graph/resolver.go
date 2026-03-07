@@ -28,6 +28,7 @@ type Edge struct {
 	Compatibility string `json:"compatibility"`
 	Node          *Node  `json:"node,omitempty"`
 	Error         string `json:"error,omitempty"`
+	Shared        bool   `json:"shared,omitempty"`
 }
 
 // Result holds the output of graph resolution.
@@ -47,7 +48,7 @@ func Resolve(ctx context.Context, c *contract.Contract, fetcher ContractFetcher)
 		Version: c.Service.Version,
 	}
 
-	visited := map[string]bool{}
+	visited := map[string]*Node{}
 	path := []string{c.Service.Name}
 
 	var cycles [][]string
@@ -67,7 +68,7 @@ func Resolve(ctx context.Context, c *contract.Contract, fetcher ContractFetcher)
 }
 
 // resolveEdge resolves a single dependency edge, recursing into its dependencies.
-func resolveEdge(ctx context.Context, dep contract.Dependency, fetcher ContractFetcher, visited map[string]bool, path []string, cycles *[][]string) Edge {
+func resolveEdge(ctx context.Context, dep contract.Dependency, fetcher ContractFetcher, visited map[string]*Node, path []string, cycles *[][]string) Edge {
 	edge := Edge{
 		Ref:           dep.Ref,
 		Required:      dep.Required,
@@ -86,8 +87,10 @@ func resolveEdge(ctx context.Context, dep contract.Dependency, fetcher ContractF
 		return edge
 	}
 
-	// Skip if already fully resolved (avoid redundant fetches).
-	if visited[dep.Ref] {
+	// If already resolved, return a shared reference (avoid redundant fetches).
+	if prev := visited[dep.Ref]; prev != nil {
+		edge.Shared = true
+		edge.Node = &Node{Name: prev.Name, Version: prev.Version, Ref: prev.Ref}
 		return edge
 	}
 
@@ -97,12 +100,12 @@ func resolveEdge(ctx context.Context, dep contract.Dependency, fetcher ContractF
 		return edge
 	}
 
-	visited[dep.Ref] = true
 	node := &Node{
 		Name:    depContract.Service.Name,
 		Version: depContract.Service.Version,
 		Ref:     dep.Ref,
 	}
+	visited[dep.Ref] = node
 
 	childPath := append(append([]string{}, path...), dep.Ref)
 	for _, childDep := range depContract.Dependencies {

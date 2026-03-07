@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/trianalab/pacto/internal/doc"
+	"github.com/trianalab/pacto/internal/graph"
 )
 
 // generateDoc is the function used to generate documentation. It is a variable
@@ -35,7 +36,13 @@ func (s *Service) Doc(ctx context.Context, opts DocOptions) (*DocResult, error) 
 		return nil, err
 	}
 
-	markdown, err := generateDoc(bundle.Contract, bundle.FS)
+	var fetcher graph.ContractFetcher
+	if s.BundleStore != nil {
+		fetcher = &bundleStoreFetcher{store: s.BundleStore}
+	}
+	gr := graph.Resolve(ctx, bundle.Contract, fetcher)
+
+	markdown, err := generateDoc(bundle.Contract, bundle.FS, gr)
 	if err != nil {
 		return nil, fmt.Errorf("generating documentation: %w", err)
 	}

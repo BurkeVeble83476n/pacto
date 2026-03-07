@@ -90,49 +90,14 @@ func printDiffResult(cmd *cobra.Command, result *app.DiffResult, format string) 
 
 func printGraphResult(cmd *cobra.Command, result *app.GraphResult, format string) error {
 	return formatResult(cmd, format, result, func() error {
-		w := cmd.OutOrStdout()
-		_, _ = fmt.Fprintf(w, "%s@%s\n", result.Root.Name, result.Root.Version)
-		printDeps(cmd, result.Root.Dependencies, "")
-
-		if len(result.Cycles) > 0 {
-			_, _ = fmt.Fprintf(w, "\nCycles (%d):\n", len(result.Cycles))
-			for _, cycle := range result.Cycles {
-				_, _ = fmt.Fprintf(w, "  ")
-				for i, ref := range cycle {
-					if i > 0 {
-						_, _ = fmt.Fprintf(w, " -> ")
-					}
-					_, _ = fmt.Fprintf(w, "%s", ref)
-				}
-				_, _ = fmt.Fprintln(w)
-			}
+		gr := &graph.Result{
+			Root:      result.Root,
+			Cycles:    result.Cycles,
+			Conflicts: result.Conflicts,
 		}
-
-		if len(result.Conflicts) > 0 {
-			_, _ = fmt.Fprintf(w, "\nConflicts (%d):\n", len(result.Conflicts))
-			for _, c := range result.Conflicts {
-				_, _ = fmt.Fprintf(w, "  %s: %v\n", c.Name, c.Versions)
-			}
-		}
-
+		_, _ = fmt.Fprint(cmd.OutOrStdout(), graph.RenderTree(gr))
 		return nil
 	})
-}
-
-func printDeps(cmd *cobra.Command, edges []graph.Edge, indent string) {
-	w := cmd.OutOrStdout()
-	for _, edge := range edges {
-		if edge.Error != "" {
-			_, _ = fmt.Fprintf(w, "%s  ! %s (error: %s)\n", indent, edge.Ref, edge.Error)
-			continue
-		}
-		if edge.Node != nil {
-			_, _ = fmt.Fprintf(w, "%s  - %s@%s (%s)\n", indent, edge.Node.Name, edge.Node.Version, edge.Ref)
-			printDeps(cmd, edge.Node.Dependencies, indent+"  ")
-		} else {
-			_, _ = fmt.Fprintf(w, "%s  - %s\n", indent, edge.Ref)
-		}
-	}
 }
 
 func printExplainResult(cmd *cobra.Command, result *app.ExplainResult, format string) error {

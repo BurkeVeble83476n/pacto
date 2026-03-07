@@ -735,10 +735,8 @@ func TestWriteMermaidDiagram_WithGraphResult(t *testing.T) {
 		`external(["External User"])`,
 		"frontend_iface_http",
 		"<br/>♥ health",
-		// External user arrows to all public interfaces
+		// External user arrows only to root service public interfaces
 		"external --> frontend_iface_http",
-		"external --> backend_iface_api",
-		"external --> keycloak_iface_http",
 		// Backend subgraph
 		`subgraph backend["backend v1.0.0"]`,
 		"backend_iface_api",

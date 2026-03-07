@@ -259,26 +259,11 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 	fmt.Fprintln(b, "```mermaid")
 	fmt.Fprintln(b, "graph LR")
 
-	// Collect all contracts (root + dependencies)
-	allContracts := []*contract.Contract{c}
-	if gr != nil && gr.Root != nil {
-		for _, node := range collectUniqueNodes(gr.Root) {
-			if node.Contract != nil {
-				allContracts = append(allContracts, node.Contract)
-			}
-		}
-	}
-
-	// Render external user node if any service has public interfaces
+	// Check if root service has public interfaces
 	hasPublic := false
-	for _, sc := range allContracts {
-		for _, iface := range sc.Interfaces {
-			if iface.Visibility == contract.VisibilityPublic {
-				hasPublic = true
-				break
-			}
-		}
-		if hasPublic {
+	for _, iface := range c.Interfaces {
+		if iface.Visibility == contract.VisibilityPublic {
+			hasPublic = true
 			break
 		}
 	}
@@ -287,9 +272,16 @@ func writeMermaidDiagram(b *strings.Builder, c *contract.Contract, gr *graph.Res
 		fmt.Fprintln(b)
 	}
 
-	// Render subgraphs and interface nodes for all services
-	for _, sc := range allContracts {
-		writeServiceSubgraph(b, sc, hasPublic)
+	// Root service subgraph (with external user arrows)
+	writeServiceSubgraph(b, c, hasPublic)
+
+	// Dependency subgraphs
+	if gr != nil && gr.Root != nil {
+		for _, node := range collectUniqueNodes(gr.Root) {
+			if node.Contract != nil {
+				writeServiceSubgraph(b, node.Contract, false)
+			}
+		}
 	}
 
 	// Dependency edges — use full transitive graph when available

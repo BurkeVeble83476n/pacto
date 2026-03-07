@@ -60,7 +60,7 @@ The only public package. Contains pure Go types and logic with **zero I/O and ze
 Each CLI command maps to exactly one service method. This layer orchestrates domain logic and infrastructure.
 
 - `Init()`, `Validate()`, `Pack()`, `Push()`, `Pull()`
-- `Diff()`, `Graph()`, `Explain()`, `Generate()`
+- `Diff()`, `Graph()`, `Explain()`, `Generate()`, `Doc()`
 - Shared helpers: `resolveBundle()`, `loadAndValidateLocal()`
 
 ### `internal/cli` — CLI layer
@@ -92,7 +92,11 @@ Compares two contracts and classifies every change using a deterministic rule ta
 
 ### `internal/graph` — Dependency resolver
 
-Builds a dependency graph by recursively fetching contracts from OCI registries. Detects cycles and version conflicts.
+Builds a dependency graph by recursively fetching contracts from OCI registries and local paths. Detects cycles and version conflicts. Also provides:
+
+- `ParseDependencyRef()` — centralized dependency reference parser (`oci://`, `file://`, bare paths)
+- `RenderTree()` / `RenderDiffTree()` — tree-style rendering with `├─`/`└─` connectors
+- `DiffGraphs()` — structural diff between two dependency graphs
 
 ### `internal/oci` — OCI adapter
 

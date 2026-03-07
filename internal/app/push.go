@@ -2,8 +2,10 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
@@ -39,6 +41,11 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 		return nil, err
 	}
 
+	parsed := graph.ParseDependencyRef(opts.Ref)
+	if !parsed.IsOCI() {
+		return nil, fmt.Errorf("push requires an OCI reference (oci://...): got %q", opts.Ref)
+	}
+
 	path := defaultPath(opts.Path)
 
 	c, _, bundleFS, err := loadAndValidateLocal(path)
@@ -46,7 +53,11 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 		return nil, err
 	}
 
-	ref := opts.Ref
+	if err := rejectLocalDeps(c); err != nil {
+		return nil, err
+	}
+
+	ref := parsed.Location
 	if !hasTagOrDigest(ref) {
 		ref = ref + ":" + c.Service.Version
 	}
@@ -64,4 +75,14 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 		Name:    c.Service.Name,
 		Version: c.Service.Version,
 	}, nil
+}
+
+// rejectLocalDeps returns an error if any dependency uses a local reference.
+func rejectLocalDeps(c *contract.Contract) error {
+	for _, dep := range c.Dependencies {
+		if graph.ParseDependencyRef(dep.Ref).IsLocal() {
+			return fmt.Errorf("local dependency detected: %s\nLocal dependencies are not allowed when publishing. All dependencies must use OCI references (oci://...)", dep.Ref)
+		}
+	}
+	return nil
 }

@@ -64,10 +64,10 @@ configuration:
   schema: configuration/schema.json
 
 dependencies:
-  - ref: %s/postgres-pacto:1.0.0
+  - ref: oci://%s/postgres-pacto:1.0.0
     required: true
     compatibility: "^1.0.0"
-  - ref: %s/redis-pacto:1.0.0
+  - ref: oci://%s/redis-pacto:1.0.0
     required: false
     compatibility: "^1.0.0"
 
@@ -231,6 +231,64 @@ runtime:
     interface: wrong-name
     path: /health
 `
+
+// myAppContractV2 references redis v2 (upgraded) and drops postgres (removed).
+func myAppContractV2(registryHost string) string {
+	return fmt.Sprintf(`pactoVersion: "1.0"
+
+service:
+  name: my-app
+  version: 2.0.0
+  owner: team/platform
+
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+    visibility: internal
+    contract: interfaces/openapi.yaml
+
+configuration:
+  schema: configuration/schema.json
+
+dependencies:
+  - ref: oci://%s/redis-pacto:2.0.0
+    required: true
+    compatibility: "^2.0.0"
+
+runtime:
+  workload: service
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  lifecycle:
+    upgradeStrategy: rolling
+    gracefulShutdownSeconds: 30
+  health:
+    interface: api
+    path: /health
+
+scaling:
+  min: 1
+  max: 5
+
+metadata:
+  team: platform
+  tier: standard
+`, registryHost)
+}
+
+// writeMyAppV2Bundle creates the my-app@2.0.0 bundle directory.
+func writeMyAppV2Bundle(t *testing.T, registryHost string) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "my-app-v2")
+	return writeBundleDir(t, dir, myAppContractV2(registryHost), map[string]string{
+		"openapi.yaml": fmt.Sprintf(openapiTemplate, "my-app", "2.0.0"),
+	})
+}
 
 // writeBundleDir writes a contract YAML and companion files to a directory.
 // Returns the directory path.

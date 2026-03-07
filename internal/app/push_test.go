@@ -3,6 +3,9 @@ package app
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/trianalab/pacto/pkg/contract"
@@ -12,7 +15,7 @@ func TestPush_Success(t *testing.T) {
 	dir := writeTestBundle(t)
 	store := &mockBundleStore{}
 	svc := NewService(store, nil)
-	result, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:1.0.0", Path: dir})
+	result, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -32,7 +35,7 @@ func TestPush_Success(t *testing.T) {
 
 func TestPush_NilStore(t *testing.T) {
 	svc := NewService(nil, nil)
-	_, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:1.0.0", Path: "."})
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: "."})
 	if err == nil {
 		t.Error("expected error for nil store")
 	}
@@ -42,7 +45,7 @@ func TestPush_InvalidContract(t *testing.T) {
 	dir := writeInvalidBundle(t)
 	store := &mockBundleStore{}
 	svc := NewService(store, nil)
-	_, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:1.0.0", Path: dir})
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
 	if err == nil {
 		t.Error("expected error for invalid contract")
 	}
@@ -51,7 +54,7 @@ func TestPush_InvalidContract(t *testing.T) {
 func TestPush_FileNotFound(t *testing.T) {
 	store := &mockBundleStore{}
 	svc := NewService(store, nil)
-	_, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:1.0.0", Path: "/nonexistent/dir"})
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: "/nonexistent/dir"})
 	if err == nil {
 		t.Error("expected error for nonexistent directory")
 	}
@@ -65,7 +68,7 @@ func TestPush_StoreError(t *testing.T) {
 		},
 	}
 	svc := NewService(store, nil)
-	_, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:1.0.0", Path: dir})
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
 	if err == nil {
 		t.Error("expected error from store")
 	}
@@ -103,7 +106,7 @@ func TestPush_AutoTagFromVersion(t *testing.T) {
 		},
 	}
 	svc := NewService(store, nil)
-	result, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc", Path: dir})
+	result, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc", Path: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -112,6 +115,102 @@ func TestPush_AutoTagFromVersion(t *testing.T) {
 	}
 	if pushedRef != "ghcr.io/acme/svc:1.0.0" {
 		t.Errorf("expected store to receive ref ghcr.io/acme/svc:1.0.0, got %s", pushedRef)
+	}
+}
+
+func TestRejectLocalDeps_LocalRef(t *testing.T) {
+	c := &contract.Contract{
+		Dependencies: []contract.Dependency{
+			{Ref: "../local-dep", Required: true},
+		},
+	}
+	err := rejectLocalDeps(c)
+	if err == nil {
+		t.Fatal("expected error for local dependency ref")
+	}
+	if !strings.Contains(err.Error(), "local dependency detected") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRejectLocalDeps_FileScheme(t *testing.T) {
+	c := &contract.Contract{
+		Dependencies: []contract.Dependency{
+			{Ref: "file:///abs/path/dep", Required: true},
+		},
+	}
+	err := rejectLocalDeps(c)
+	if err == nil {
+		t.Fatal("expected error for file:// dependency ref")
+	}
+}
+
+func TestRejectLocalDeps_OCIAllowed(t *testing.T) {
+	c := &contract.Contract{
+		Dependencies: []contract.Dependency{
+			{Ref: "oci://ghcr.io/acme/dep:1.0.0", Required: true},
+		},
+	}
+	err := rejectLocalDeps(c)
+	if err != nil {
+		t.Fatalf("unexpected error for OCI dependency: %v", err)
+	}
+}
+
+func TestRejectLocalDeps_NoDeps(t *testing.T) {
+	c := &contract.Contract{}
+	err := rejectLocalDeps(c)
+	if err != nil {
+		t.Fatalf("unexpected error for no dependencies: %v", err)
+	}
+}
+
+func TestPush_RejectsLocalDeps(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte(`pactoVersion: "1.0"
+service:
+  name: test-svc
+  version: "1.0.0"
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+dependencies:
+  - ref: "../local-dep"
+    required: true
+    compatibility: "^1.0.0"
+runtime:
+  workload: service
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  health:
+    interface: api
+    path: /health
+`)
+	if err := os.WriteFile(filepath.Join(dir, "pacto.yaml"), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := &mockBundleStore{}
+	svc := NewService(store, nil)
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
+	if err == nil {
+		t.Fatal("expected error for local dependency")
+	}
+	if !strings.Contains(err.Error(), "local dependency detected") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestPush_RejectsLocalRef(t *testing.T) {
+	store := &mockBundleStore{}
+	svc := NewService(store, nil)
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "../local-path", Path: "."})
+	if err == nil {
+		t.Error("expected error for local ref")
 	}
 }
 
@@ -125,7 +224,7 @@ func TestPush_ExplicitTagKept(t *testing.T) {
 		},
 	}
 	svc := NewService(store, nil)
-	result, err := svc.Push(context.Background(), PushOptions{Ref: "ghcr.io/acme/svc:custom", Path: dir})
+	result, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:custom", Path: dir})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

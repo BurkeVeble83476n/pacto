@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"fmt"
+	"path/filepath"
 
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/pkg/contract"
@@ -12,12 +14,8 @@ type GraphOptions struct {
 	Path string
 }
 
-// GraphResult holds the result of the graph command.
-type GraphResult struct {
-	Root      *graph.Node      `json:"root"`
-	Cycles    [][]string       `json:"cycles,omitempty"`
-	Conflicts []graph.Conflict `json:"conflicts,omitempty"`
-}
+// GraphResult is the result of the graph command.
+type GraphResult = graph.Result
 
 // Graph resolves the dependency graph for a contract.
 func (s *Service) Graph(ctx context.Context, opts GraphOptions) (*GraphResult, error) {
@@ -28,24 +26,9 @@ func (s *Service) Graph(ctx context.Context, opts GraphOptions) (*GraphResult, e
 		return nil, err
 	}
 
-	// Use BundleStore as a ContractFetcher if available.
-	var fetcher graph.ContractFetcher
-	if s.BundleStore != nil {
-		fetcher = &bundleStoreFetcher{store: s.BundleStore}
-	}
-
+	fetcher := s.newDepFetcher(ref)
 	result := graph.Resolve(ctx, bundle.Contract, fetcher)
-
-	return &GraphResult{
-		Root:      result.Root,
-		Cycles:    result.Cycles,
-		Conflicts: result.Conflicts,
-	}, nil
-}
-
-// bundleStoreFetcher adapts oci.BundleStore to graph.ContractFetcher.
-type bundleStoreFetcher struct {
-	store BundlePuller
+	return result, nil
 }
 
 // BundlePuller is the subset of oci.BundleStore needed by the fetcher.
@@ -54,8 +37,47 @@ type BundlePuller interface {
 	Pull(ctx context.Context, ref string) (*contract.Bundle, error)
 }
 
-func (f *bundleStoreFetcher) Fetch(ctx context.Context, ref string) (*contract.Contract, error) {
-	bundle, err := f.store.Pull(ctx, ref)
+// depFetcher resolves dependency contracts from both OCI and local sources.
+// It uses the baseDir of the root contract to resolve relative local paths.
+type depFetcher struct {
+	store   BundlePuller
+	baseDir string
+}
+
+// newDepFetcher creates a ContractFetcher that can resolve both OCI and local
+// dependency references. baseRef is the path/ref of the root contract.
+func (s *Service) newDepFetcher(baseRef string) graph.ContractFetcher {
+	base := ""
+	if !isOCIRef(baseRef) {
+		abs, err := filepath.Abs(baseRef)
+		if err == nil {
+			base = abs
+		}
+	}
+	return &depFetcher{store: s.BundleStore, baseDir: base}
+}
+
+func (f *depFetcher) Fetch(ctx context.Context, ref string) (*contract.Contract, error) {
+	parsed := graph.ParseDependencyRef(ref)
+	if parsed.IsLocal() {
+		return f.fetchLocal(parsed)
+	}
+	if f.store == nil {
+		return nil, fmt.Errorf("OCI store not configured (cannot fetch %s)", ref)
+	}
+	bundle, err := f.store.Pull(ctx, parsed.Location)
+	if err != nil {
+		return nil, err
+	}
+	return bundle.Contract, nil
+}
+
+func (f *depFetcher) fetchLocal(ref graph.DependencyRef) (*contract.Contract, error) {
+	path := ref.Location
+	if !filepath.IsAbs(path) && f.baseDir != "" {
+		path = filepath.Join(f.baseDir, path)
+	}
+	bundle, err := loadLocalBundle(path)
 	if err != nil {
 		return nil, err
 	}

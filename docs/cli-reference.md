@@ -456,6 +456,56 @@ Notifications are suppressed when:
 
 ---
 
+## `pacto mcp`
+
+Start a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that exposes Pacto contract operations as structured tools. AI assistants (Claude, Cursor, GitHub Copilot) connect to this server and can then validate contracts, resolve dependency graphs, run diff analysis, and generate contract scaffolding — all through standardized tool calls.
+
+```bash
+pacto mcp [-t transport] [--port port]
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-t, --transport` | `stdio` | Transport type: `stdio` or `http` |
+| `--port` | `8585` | Port for HTTP transport |
+
+The server exposes the following tools:
+
+| Tool | Description |
+|------|-------------|
+| `pacto_validate` | Validate a contract and return errors/warnings |
+| `pacto_inspect` | Return the full structured contract representation |
+| `pacto_resolve_dependencies` | Resolve the dependency graph, detecting cycles and conflicts |
+| `pacto_list_interfaces` | List interfaces exposed by a service |
+| `pacto_generate_docs` | Generate Markdown documentation from a contract |
+| `pacto_explain` | Return a human-readable summary of a contract |
+| `pacto_generate_contract` | Generate a new contract YAML from structured inputs |
+| `pacto_suggest_dependencies` | Suggest likely dependencies based on service characteristics |
+
+All tools accept both local directory paths and `oci://` references.
+
+**Examples:**
+
+```bash
+# Start MCP server over stdio (default, used by Claude Code / Cursor)
+$ pacto mcp
+MCP server running on stdio
+
+# Start MCP server over HTTP
+$ pacto mcp -t http
+MCP server listening on http://127.0.0.1:8585/mcp
+
+# Start MCP server on a custom port
+$ pacto mcp -t http --port 9090
+MCP server listening on http://127.0.0.1:9090/mcp
+```
+
+See [MCP Integration]({{ site.baseurl }}{% link mcp-integration.md %}) for detailed setup instructions with Claude and other AI tools.
+
+---
+
 ## `pacto version`
 
 Print version information.

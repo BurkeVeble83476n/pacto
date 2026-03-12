@@ -3,19 +3,28 @@ package cli
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/spf13/cobra"
 	"github.com/trianalab/pacto/internal/app"
+	"github.com/trianalab/pacto/internal/diff"
 	"github.com/trianalab/pacto/internal/graph"
 )
 
-// formatResult dispatches between JSON and text output. If format is "json",
-// it encodes result as indented JSON. Otherwise it calls the textFn formatter.
-func formatResult(cmd *cobra.Command, format string, result any, textFn func() error) error {
-	if format == "json" {
+// formatResult dispatches between JSON, markdown and text output.
+// When markdownFn is nil and format is "markdown", it falls back to textFn.
+func formatResult(cmd *cobra.Command, format string, result any, textFn func() error, markdownFn ...func() error) error {
+	switch format {
+	case "json":
 		return printJSON(cmd, result)
+	case "markdown":
+		if len(markdownFn) > 0 && markdownFn[0] != nil {
+			return markdownFn[0]()
+		}
+		return textFn()
+	default:
+		return textFn()
 	}
-	return textFn()
 }
 
 func printInitResult(cmd *cobra.Command, result *app.InitResult, format string) error {
@@ -73,32 +82,67 @@ func printPullResult(cmd *cobra.Command, result *app.PullResult, format string) 
 func printDiffResult(cmd *cobra.Command, result *app.DiffResult, format string) error {
 	return formatResult(cmd, format, result, func() error {
 		w := cmd.OutOrStdout()
+		rendered := graph.RenderDiffTree(result.GraphDiff)
+
 		_, _ = fmt.Fprintf(w, "Classification: %s\n", result.Classification)
-		if len(result.Changes) == 0 && len(result.DependencyDiffs) == 0 {
+
+		if len(result.Changes) == 0 && len(result.DependencyDiffs) == 0 && rendered == "" {
 			_, _ = fmt.Fprintln(w, "No changes detected.")
-		} else {
-			if len(result.Changes) > 0 {
-				_, _ = fmt.Fprintf(w, "Changes (%d):\n", len(result.Changes))
-				for _, c := range result.Changes {
-					_, _ = fmt.Fprintf(w, "  [%s] %s (%s): %s\n",
-						c.Classification, c.Path, c.Type, c.Reason)
-				}
+			return nil
+		}
+
+		if len(result.Changes) > 0 {
+			_, _ = fmt.Fprintf(w, "Changes (%d):\n", len(result.Changes))
+			for _, c := range result.Changes {
+				_, _ = fmt.Fprintf(w, "  [%s] %s (%s): %s%s\n",
+					c.Classification, c.Path, c.Type, c.Reason, formatChangeValues(c))
 			}
-			for _, dd := range result.DependencyDiffs {
-				_, _ = fmt.Fprintf(w, "\nDependency %s [%s] (%d):\n", dd.Name, dd.Classification, len(dd.Changes))
-				for _, c := range dd.Changes {
-					_, _ = fmt.Fprintf(w, "  [%s] %s (%s): %s\n",
-						c.Classification, c.Path, c.Type, c.Reason)
-				}
+		}
+		for _, dd := range result.DependencyDiffs {
+			_, _ = fmt.Fprintf(w, "\nDependency %s [%s] (%d):\n", dd.Name, dd.Classification, len(dd.Changes))
+			for _, c := range dd.Changes {
+				_, _ = fmt.Fprintf(w, "  [%s] %s (%s): %s%s\n",
+					c.Classification, c.Path, c.Type, c.Reason, formatChangeValues(c))
 			}
 		}
 
-		if rendered := graph.RenderDiffTree(result.GraphDiff); rendered != "" {
+		if rendered != "" {
 			_, _ = fmt.Fprintf(w, "\nDependency graph changes:\n%s", rendered)
 		}
 
 		return nil
+	}, func() error {
+		return printDiffMarkdown(cmd, result)
 	})
+}
+
+func printDiffMarkdown(cmd *cobra.Command, result *app.DiffResult) error {
+	w := cmd.OutOrStdout()
+	_, _ = fmt.Fprintf(w, "## Contract Diff\n\n**Classification:** `%s`\n\n", result.Classification)
+
+	hasChanges := len(result.Changes) > 0 || len(result.DependencyDiffs) > 0
+	rendered := graph.RenderDiffTree(result.GraphDiff)
+
+	if !hasChanges && rendered == "" {
+		_, _ = fmt.Fprintln(w, "No changes detected.")
+		return nil
+	}
+
+	if len(result.Changes) > 0 {
+		_, _ = fmt.Fprintf(w, "### Changes (%d)\n\n", len(result.Changes))
+		printDiffMarkdownTable(w, result.Changes)
+	}
+
+	for _, dd := range result.DependencyDiffs {
+		_, _ = fmt.Fprintf(w, "### Dependency: %s (`%s`)\n\n", dd.Name, dd.Classification)
+		printDiffMarkdownTable(w, dd.Changes)
+	}
+
+	if rendered != "" {
+		_, _ = fmt.Fprintf(w, "### Dependency Graph Changes\n\n```\n%s```\n", rendered)
+	}
+
+	return nil
 }
 
 func printGraphResult(cmd *cobra.Command, result *app.GraphResult, format string) error {
@@ -183,6 +227,42 @@ func printDocResult(cmd *cobra.Command, result *app.DocResult, format string) er
 		}
 		return nil
 	})
+}
+
+func printDiffMarkdownTable(w io.Writer, changes []diff.Change) {
+	_, _ = fmt.Fprintln(w, "| Classification | Path | Type | Reason | Old | New |")
+	_, _ = fmt.Fprintln(w, "|---|---|---|---|---|---|")
+	for _, c := range changes {
+		_, _ = fmt.Fprintf(w, "| %s | `%s` | %s | %s | %s | %s |\n",
+			c.Classification, c.Path, c.Type, c.Reason,
+			formatMDValue(c.OldValue), formatMDValue(c.NewValue))
+	}
+	_, _ = fmt.Fprintln(w)
+}
+
+func formatMDValue(v any) string {
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprintf("`%v`", v)
+}
+
+func formatChangeValues(c diff.Change) string {
+	switch c.Type {
+	case diff.Modified:
+		if c.OldValue != nil && c.NewValue != nil {
+			return fmt.Sprintf(" [%v -> %v]", c.OldValue, c.NewValue)
+		}
+	case diff.Added:
+		if c.NewValue != nil {
+			return fmt.Sprintf(" [+ %v]", c.NewValue)
+		}
+	case diff.Removed:
+		if c.OldValue != nil {
+			return fmt.Sprintf(" [- %v]", c.OldValue)
+		}
+	}
+	return ""
 }
 
 func printJSON(cmd *cobra.Command, v any) error {

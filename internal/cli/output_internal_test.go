@@ -268,6 +268,9 @@ func TestPrintDiffResult_WithGraphDiff(t *testing.T) {
 	if !strings.Contains(out, "+7.2.0") {
 		t.Errorf("expected +7.2.0 in graph diff, got %q", out)
 	}
+	if strings.Contains(out, "No changes detected") {
+		t.Errorf("should not show 'No changes detected' when graph has changes, got %q", out)
+	}
 }
 
 func TestPrintDiffResult_NoGraphDiffChanges(t *testing.T) {
@@ -547,6 +550,268 @@ func TestPrintDocResult_JSON(t *testing.T) {
 	}
 	if !strings.Contains(out, `"path"`) {
 		t.Errorf("expected JSON output with path field, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_NoChanges(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{OldPath: "a.yaml", NewPath: "b.yaml", Classification: "NON_BREAKING"}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "## Contract Diff") {
+		t.Errorf("expected markdown heading, got %q", out)
+	}
+	if !strings.Contains(out, "`NON_BREAKING`") {
+		t.Errorf("expected classification in backticks, got %q", out)
+	}
+	if !strings.Contains(out, "No changes detected") {
+		t.Errorf("expected 'No changes detected', got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_WithChanges(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "BREAKING",
+		Changes: []diff.Change{
+			{Path: "service.name", Type: diff.Modified, Classification: diff.Breaking, Reason: "name changed"},
+		},
+	}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "### Changes (1)") {
+		t.Errorf("expected changes heading, got %q", out)
+	}
+	if !strings.Contains(out, "| Classification | Path | Type | Reason |") {
+		t.Errorf("expected table header, got %q", out)
+	}
+	if !strings.Contains(out, "`service.name`") {
+		t.Errorf("expected path in backticks, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_WithDependencyDiffs(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "BREAKING",
+		DependencyDiffs: []app.DependencyDiff{
+			{
+				Name:           "my-dep",
+				Classification: "BREAKING",
+				Changes: []diff.Change{
+					{Path: "openapi.paths[/users]", Type: diff.Removed, Classification: diff.Breaking, Reason: "API path /users removed"},
+				},
+			},
+		},
+	}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "### Dependency: my-dep (`BREAKING`)") {
+		t.Errorf("expected dependency heading, got %q", out)
+	}
+	if !strings.Contains(out, "`openapi.paths[/users]`") {
+		t.Errorf("expected change path in backticks, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_WithGraphDiff(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "NON_BREAKING",
+		GraphDiff: &graph.GraphDiff{
+			Root: graph.DiffNode{
+				Name: "svc",
+				Children: []graph.DiffNode{
+					{
+						Name:    "redis",
+						Version: "7.2.0",
+						Change:  &graph.GraphChange{Name: "redis", ChangeType: graph.AddedNode, NewVersion: "7.2.0"},
+					},
+				},
+			},
+			Changes: []graph.GraphChange{
+				{Name: "redis", ChangeType: graph.AddedNode, NewVersion: "7.2.0"},
+			},
+		},
+	}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "### Dependency Graph Changes") {
+		t.Errorf("expected graph diff heading, got %q", out)
+	}
+	if !strings.Contains(out, "```") {
+		t.Errorf("expected code block, got %q", out)
+	}
+	if !strings.Contains(out, "redis") {
+		t.Errorf("expected redis in output, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_NoGraphDiffChanges(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "NON_BREAKING",
+		GraphDiff:      &graph.GraphDiff{Root: graph.DiffNode{Name: "svc"}},
+	}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if strings.Contains(out, "### Dependency Graph Changes") {
+		t.Errorf("did not expect graph diff heading when no changes, got %q", out)
+	}
+}
+
+func TestFormatResult_MarkdownFallbackToText(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.InitResult{Dir: "my-svc", Path: "my-svc/pacto.yaml"}
+	if err := printInitResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Created my-svc/") {
+		t.Errorf("expected text fallback for markdown, got %q", out)
+	}
+}
+
+func TestFormatChangeValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		change diff.Change
+		want   string
+	}{
+		{
+			name:   "modified with values",
+			change: diff.Change{Type: diff.Modified, OldValue: "old", NewValue: "new"},
+			want:   " [old -> new]",
+		},
+		{
+			name:   "modified nil values",
+			change: diff.Change{Type: diff.Modified, OldValue: nil, NewValue: nil},
+			want:   "",
+		},
+		{
+			name:   "added with value",
+			change: diff.Change{Type: diff.Added, NewValue: "val"},
+			want:   " [+ val]",
+		},
+		{
+			name:   "added nil value",
+			change: diff.Change{Type: diff.Added},
+			want:   "",
+		},
+		{
+			name:   "removed with value",
+			change: diff.Change{Type: diff.Removed, OldValue: "val"},
+			want:   " [- val]",
+		},
+		{
+			name:   "removed nil value",
+			change: diff.Change{Type: diff.Removed},
+			want:   "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := formatChangeValues(tt.change)
+			if got != tt.want {
+				t.Errorf("formatChangeValues() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFormatMDValue(t *testing.T) {
+	if got := formatMDValue(nil); got != "" {
+		t.Errorf("expected empty for nil, got %q", got)
+	}
+	if got := formatMDValue("hello"); got != "`hello`" {
+		t.Errorf("expected backtick-wrapped, got %q", got)
+	}
+	if got := formatMDValue(42); got != "`42`" {
+		t.Errorf("expected backtick-wrapped int, got %q", got)
+	}
+}
+
+func TestPrintDiffResult_TextWithValues(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "BREAKING",
+		Changes: []diff.Change{
+			{Path: "service.name", Type: diff.Modified, Classification: diff.Breaking, Reason: "name changed", OldValue: "svc-a", NewValue: "svc-b"},
+		},
+	}
+	if err := printDiffResult(cmd, result, "text"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[svc-a -> svc-b]") {
+		t.Errorf("expected old/new values in text output, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_Markdown_WithValues(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "BREAKING",
+		Changes: []diff.Change{
+			{Path: "service.name", Type: diff.Modified, Classification: diff.Breaking, Reason: "name changed", OldValue: "svc-a", NewValue: "svc-b"},
+		},
+	}
+	if err := printDiffResult(cmd, result, "markdown"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "| Old | New |") {
+		t.Errorf("expected Old/New columns in table header, got %q", out)
+	}
+	if !strings.Contains(out, "`svc-a`") || !strings.Contains(out, "`svc-b`") {
+		t.Errorf("expected old/new values in markdown output, got %q", out)
+	}
+}
+
+func TestPrintDiffResult_TextDependencyWithValues(t *testing.T) {
+	cmd, buf := testCmd()
+	result := &app.DiffResult{
+		OldPath:        "a.yaml",
+		NewPath:        "b.yaml",
+		Classification: "BREAKING",
+		DependencyDiffs: []app.DependencyDiff{
+			{
+				Name:           "dep",
+				Classification: "BREAKING",
+				Changes: []diff.Change{
+					{Path: "openapi.paths[/users]", Type: diff.Removed, Classification: diff.Breaking, Reason: "path removed", OldValue: "/users"},
+				},
+			},
+		},
+	}
+	if err := printDiffResult(cmd, result, "text"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "[- /users]") {
+		t.Errorf("expected removed value in text output, got %q", out)
 	}
 }
 

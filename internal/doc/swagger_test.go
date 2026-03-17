@@ -392,26 +392,41 @@ paths: {}
 
 	time.Sleep(50 * time.Millisecond)
 
-	resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+	// Root should redirect to the first spec's UI page.
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}}
+	resp, err := client.Get(fmt.Sprintf("http://%s/", addr))
 	if err != nil {
 		t.Fatalf("GET / failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("read body: %v", err)
+	if resp.StatusCode != http.StatusFound {
+		t.Errorf("expected 302 redirect, got %d", resp.StatusCode)
+	}
+	if loc := resp.Header.Get("Location"); loc != "/ui/api" {
+		t.Errorf("expected redirect to /ui/api, got %q", loc)
 	}
 
+	// The UI page should contain nav links and a Scalar reference.
+	resp2, err := http.Get(fmt.Sprintf("http://%s/ui/api", addr))
+	if err != nil {
+		t.Fatalf("GET /ui/api failed: %v", err)
+	}
+	defer func() { _ = resp2.Body.Close() }()
+	body, _ := io.ReadAll(resp2.Body)
 	html := string(body)
 	if !strings.Contains(html, "multi-svc") {
 		t.Error("expected title in multi-spec page")
 	}
-	if !strings.Contains(html, "/spec/api") {
-		t.Error("expected api spec link")
+	if !strings.Contains(html, "/ui/api") {
+		t.Error("expected api nav link")
 	}
-	if !strings.Contains(html, "/spec/admin") {
-		t.Error("expected admin spec link")
+	if !strings.Contains(html, "/ui/admin") {
+		t.Error("expected admin nav link")
+	}
+	if !strings.Contains(html, "/spec/api") {
+		t.Error("expected spec data-url for api")
 	}
 
 	cancel()
@@ -705,15 +720,15 @@ paths: {}
 		t.Errorf("expected 200 from proxy to upstream2, got %d", pr2.StatusCode)
 	}
 
-	// Page should have proxy attribute.
-	pageResp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+	// UI page should have proxy attribute.
+	pageResp, err := http.Get(fmt.Sprintf("http://%s/ui/api", addr))
 	if err != nil {
-		t.Fatalf("GET / failed: %v", err)
+		t.Fatalf("GET /ui/api failed: %v", err)
 	}
 	defer func() { _ = pageResp.Body.Close() }()
 	pageBody, _ := io.ReadAll(pageResp.Body)
-	if !strings.Contains(string(pageBody), "proxyUrl") {
-		t.Error("expected proxy attribute in multi-spec page with targets")
+	if !strings.Contains(string(pageBody), `data-proxy-url="/proxy"`) {
+		t.Error("expected data-proxy-url attribute in multi-spec page with targets")
 	}
 
 	cancel()
@@ -906,17 +921,18 @@ paths: {}
 
 	time.Sleep(50 * time.Millisecond)
 
-	resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+	// Check the UI page for proxy attribute.
+	resp, err := http.Get(fmt.Sprintf("http://%s/ui/api", addr))
 	if err != nil {
-		t.Fatalf("GET / failed: %v", err)
+		t.Fatalf("GET /ui/api failed: %v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	if !strings.Contains(html, `el.dataset.proxyUrl = '/proxy'`) {
-		t.Error("expected proxyUrl script line in multi-spec page with target")
+	if !strings.Contains(html, `data-proxy-url="/proxy"`) {
+		t.Error("expected data-proxy-url attribute in multi-spec page with target")
 	}
 	if !strings.Contains(html, "multi-target") {
 		t.Error("expected title in multi-spec page")

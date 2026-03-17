@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -40,7 +41,7 @@ type SwaggerOptions struct {
 	FS     fs.FS
 	Title  string
 	Port   int
-	Target string // if set, overrides the servers array in every spec
+	Target string // if set, overrides the servers array and proxies requests
 }
 
 // ServeSwagger starts a local HTTP server that renders an interactive API
@@ -60,6 +61,10 @@ func ServeSwagger(ctx context.Context, opts SwaggerOptions) error {
 func ServeSwaggerOnListener(ctx context.Context, opts SwaggerOptions, ln net.Listener) error {
 	mux := http.NewServeMux()
 
+	if opts.Target != "" {
+		mux.HandleFunc("/proxy", newProxyHandler(opts.Target))
+	}
+
 	for _, s := range opts.Specs {
 		registerSpecHandler(mux, s, opts.FS, opts.Target)
 	}
@@ -70,7 +75,7 @@ func ServeSwaggerOnListener(ctx context.Context, opts SwaggerOptions, ln net.Lis
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprint(w, buildSwaggerPage(opts.Specs, opts.Title))
+		_, _ = fmt.Fprint(w, buildSwaggerPage(opts.Specs, opts.Title, opts.Target != ""))
 	})
 
 	srv := &http.Server{Handler: mux}
@@ -90,7 +95,8 @@ func ServeSwaggerOnListener(ctx context.Context, opts SwaggerOptions, ln net.Lis
 
 // registerSpecHandler registers a GET handler that serves the OpenAPI spec
 // as JSON. Scalar works best with JSON, so YAML specs are converted.
-// If target is non-empty, the spec's servers array is overridden.
+// If target is non-empty, the spec's servers array is overridden so Scalar
+// shows the target URL (requests still go through the local proxy).
 func registerSpecHandler(mux *http.ServeMux, s SwaggerSpec, fsys fs.FS, target string) {
 	pattern := "/spec/" + s.InterfaceName
 	mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
@@ -120,15 +126,72 @@ func registerSpecHandler(mux *http.ServeMux, s SwaggerSpec, fsys fs.FS, target s
 
 // overrideServers replaces the "servers" array in an OpenAPI JSON spec
 // with a single entry pointing to the given URL.
-func overrideServers(specJSON []byte, target string) ([]byte, error) {
+func overrideServers(specJSON []byte, serverURL string) ([]byte, error) {
 	var spec map[string]any
 	if err := json.Unmarshal(specJSON, &spec); err != nil {
 		return nil, err
 	}
 	spec["servers"] = []map[string]any{
-		{"url": target, "description": "Target server"},
+		{"url": serverURL, "description": "Target server"},
 	}
 	return json.Marshal(spec)
+}
+
+// newProxyHandler returns an HTTP handler that forwards requests to the
+// target. Scalar sends requests to the proxy with the full upstream URL
+// in the scalar_url query parameter. This avoids CORS by keeping browser
+// traffic same-origin while showing the real URL in the UI.
+func newProxyHandler(target string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		targetURL := r.URL.Query().Get("scalar_url")
+		if targetURL == "" {
+			http.Error(w, "missing scalar_url parameter", http.StatusBadRequest)
+			return
+		}
+
+		// Only allow proxying to the configured target origin.
+		if !strings.HasPrefix(targetURL, target) {
+			http.Error(w, "target not allowed", http.StatusForbidden)
+			return
+		}
+
+		proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+		copyHeaders(proxyReq.Header, r.Header)
+
+		resp, err := http.DefaultClient.Do(proxyReq)
+		if err != nil {
+			http.Error(w, "upstream unreachable", http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+
+		copyHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
+// hopByHop lists headers that must not be forwarded by proxies.
+var hopByHop = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+func copyHeaders(dst, src http.Header) {
+	for k, vv := range src {
+		if hopByHop[k] {
+			continue
+		}
+		for _, v := range vv {
+			dst.Add(k, v)
+		}
+	}
 }
 
 // ensureJSON returns JSON bytes. If the input is a YAML file (by extension)
@@ -171,30 +234,39 @@ func convertYAMLToJSON(v any) any {
 	}
 }
 
-func buildSwaggerPage(specs []SwaggerSpec, title string) string {
+func buildSwaggerPage(specs []SwaggerSpec, title string, useProxy bool) string {
 	if len(specs) == 1 {
-		return buildSingleSpecPage(specs[0], title)
+		return buildSingleSpecPage(specs[0], title, useProxy)
 	}
-	return buildMultiSpecPage(specs, title)
+	return buildMultiSpecPage(specs, title, useProxy)
 }
 
-func buildSingleSpecPage(spec SwaggerSpec, title string) string {
+func buildSingleSpecPage(spec SwaggerSpec, title string, useProxy bool) string {
+	proxyAttr := ""
+	if useProxy {
+		proxyAttr = ` data-proxy-url="/proxy"`
+	}
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
   <title>%s - API Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body>
-  <script id="api-reference" data-url="/spec/%s"></script>
+  <script id="api-reference" data-url="/spec/%s"%s></script>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-</body></html>`, title, spec.InterfaceName)
+</body></html>`, title, spec.InterfaceName, proxyAttr)
 }
 
-func buildMultiSpecPage(specs []SwaggerSpec, title string) string {
+func buildMultiSpecPage(specs []SwaggerSpec, title string, useProxy bool) string {
 	var links strings.Builder
 	for _, s := range specs {
 		fmt.Fprintf(&links, `      <li><a href="#" onclick="loadSpec('/spec/%s','%s');return false">%s</a></li>`+"\n",
 			s.InterfaceName, s.InterfaceName, s.InterfaceName)
+	}
+
+	proxyLine := ""
+	if useProxy {
+		proxyLine = `      el.dataset.proxyUrl = '/proxy';` + "\n"
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
@@ -226,10 +298,10 @@ func buildMultiSpecPage(specs []SwaggerSpec, title string) string {
       const el = document.createElement('script');
       el.id = 'api-reference';
       el.dataset.url = url;
-      container.appendChild(el);
+%s      container.appendChild(el);
     }
     // Load first spec by default.
     document.querySelector('nav a').click();
   </script>
-</body></html>`, title, title, links.String())
+</body></html>`, title, title, links.String(), proxyLine)
 }

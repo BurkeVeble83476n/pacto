@@ -584,7 +584,7 @@ paths: {}
 	}
 	defer func() { _ = pageResp.Body.Close() }()
 	pageBody, _ := io.ReadAll(pageResp.Body)
-	if !strings.Contains(string(pageBody), `data-proxy-url="/proxy"`) {
+	if !strings.Contains(string(pageBody), `proxyUrl: '/proxy'`) {
 		t.Error("expected data-proxy-url attribute in HTML")
 	}
 
@@ -736,7 +736,7 @@ paths: {}
 	}
 	defer func() { _ = pageResp.Body.Close() }()
 	pageBody, _ := io.ReadAll(pageResp.Body)
-	if !strings.Contains(string(pageBody), `data-proxy-url="/proxy"`) {
+	if !strings.Contains(string(pageBody), `proxyUrl: '/proxy'`) {
 		t.Error("expected data-proxy-url attribute in multi-spec page with targets")
 	}
 
@@ -940,7 +940,7 @@ paths: {}
 	body, _ := io.ReadAll(resp.Body)
 	html := string(body)
 
-	if !strings.Contains(html, `data-proxy-url="/proxy"`) {
+	if !strings.Contains(html, `proxyUrl: '/proxy'`) {
 		t.Error("expected data-proxy-url attribute in multi-spec page with target")
 	}
 	if !strings.Contains(html, "multi-target") {

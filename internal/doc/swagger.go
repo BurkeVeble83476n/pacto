@@ -300,9 +300,10 @@ func convertYAMLToJSON(v any) any {
 }
 
 func buildSingleSpecPage(spec SwaggerSpec, title string, useProxy bool) string {
-	proxyAttr := ""
+	proxyURL := ""
 	if useProxy {
-		proxyAttr = ` data-proxy-url="/proxy"`
+		proxyURL = `
+      proxyUrl: '/proxy',`
 	}
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head>
@@ -310,9 +311,15 @@ func buildSingleSpecPage(spec SwaggerSpec, title string, useProxy bool) string {
   <title>%s - API Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
 </head><body>
-  <script id="api-reference" data-url="/spec/%s"%s></script>
+  <div id="app"></div>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-</body></html>`, title, spec.InterfaceName, proxyAttr)
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/spec/%s',%s
+      agent: { disabled: true },
+    })
+  </script>
+</body></html>`, title, spec.InterfaceName, proxyURL)
 }
 
 func buildNavSpecPage(active SwaggerSpec, allSpecs []SwaggerSpec, title string, useProxy bool) string {
@@ -326,9 +333,10 @@ func buildNavSpecPage(active SwaggerSpec, allSpecs []SwaggerSpec, title string, 
 			s.InterfaceName, activeClass, s.InterfaceName)
 	}
 
-	proxyAttr := ""
+	proxyURL := ""
 	if useProxy {
-		proxyAttr = ` data-proxy-url="/proxy"`
+		proxyURL = `
+      proxyUrl: '/proxy',`
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
@@ -349,7 +357,13 @@ func buildNavSpecPage(active SwaggerSpec, allSpecs []SwaggerSpec, title string, 
     <ul>
 %s    </ul>
   </nav>
-  <script id="api-reference" data-url="/spec/%s"%s></script>
+  <div id="app"></div>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-</body></html>`, title, active.InterfaceName, title, links.String(), active.InterfaceName, proxyAttr)
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/spec/%s',%s
+      agent: { disabled: true },
+    })
+  </script>
+</body></html>`, title, active.InterfaceName, title, links.String(), active.InterfaceName, proxyURL)
 }

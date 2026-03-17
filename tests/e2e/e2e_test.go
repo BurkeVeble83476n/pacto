@@ -880,7 +880,10 @@ func TestDocCommand(t *testing.T) {
 		assertContains(t, output, "# postgres-pacto")
 	})
 
-	t.Run("ui swagger with zero interfaces errors", func(t *testing.T) {
+}
+
+func TestDocCommandUI(t *testing.T) {
+	t.Run("zero interfaces errors", func(t *testing.T) {
 		path := writeZeroInterfaceBundle(t)
 		_, err := runCommand(t, nil, "doc", "--ui", "swagger", path)
 		if err == nil {
@@ -889,7 +892,7 @@ func TestDocCommand(t *testing.T) {
 		assertContains(t, err.Error(), "no HTTP interfaces")
 	})
 
-	t.Run("ui swagger with one interface", func(t *testing.T) {
+	t.Run("one interface", func(t *testing.T) {
 		path := writeMyAppV1Bundle(t, "localhost")
 		_, err := runCommandWithCancelledCtx(t, nil, "doc", "--ui", "swagger", "--port", "0", path)
 		if err != nil {
@@ -897,7 +900,7 @@ func TestDocCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("ui swagger with two interfaces", func(t *testing.T) {
+	t.Run("two interfaces", func(t *testing.T) {
 		path := writeTwoInterfaceBundle(t)
 		_, err := runCommandWithCancelledCtx(t, nil, "doc", "--ui", "swagger", "--port", "0", path)
 		if err != nil {
@@ -905,7 +908,7 @@ func TestDocCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("ui swagger with interface filter", func(t *testing.T) {
+	t.Run("interface filter", func(t *testing.T) {
 		path := writeTwoInterfaceBundle(t)
 		_, err := runCommandWithCancelledCtx(t, nil, "doc", "--ui", "swagger", "--interface", "admin-api", "--port", "0", path)
 		if err != nil {
@@ -913,7 +916,7 @@ func TestDocCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("ui swagger with unknown interface errors", func(t *testing.T) {
+	t.Run("unknown interface errors", func(t *testing.T) {
 		path := writeTwoInterfaceBundle(t)
 		_, err := runCommand(t, nil, "doc", "--ui", "swagger", "--interface", "nonexistent", path)
 		if err == nil {
@@ -949,7 +952,7 @@ func TestDocCommand(t *testing.T) {
 		assertContains(t, err.Error(), "mutually exclusive")
 	})
 
-	t.Run("ui swagger with global target", func(t *testing.T) {
+	t.Run("global target", func(t *testing.T) {
 		path := writeMyAppV1Bundle(t, "localhost")
 		_, err := runCommandWithCancelledCtx(t, nil, "doc", "--ui", "swagger", "--target", "http://localhost:3000", "--port", "0", path)
 		if err != nil {
@@ -957,7 +960,7 @@ func TestDocCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("ui swagger with per-interface targets", func(t *testing.T) {
+	t.Run("per-interface targets", func(t *testing.T) {
 		path := writeTwoInterfaceBundle(t)
 		_, err := runCommandWithCancelledCtx(t, nil, "doc", "--ui", "swagger",
 			"--target", "public-api=http://localhost:3000",

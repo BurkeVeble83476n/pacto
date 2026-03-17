@@ -186,7 +186,8 @@ func TestServeSwaggerOnListener_ClosedListener(t *testing.T) {
 	}
 }
 
-func TestServeSwaggerOnListener_SingleSpec(t *testing.T) {
+func startSingleSpecServer(t *testing.T) (addr string, cancel context.CancelFunc, wait func()) {
+	t.Helper()
 	fsys := fstest.MapFS{
 		"openapi.yaml": &fstest.MapFile{Data: []byte(`openapi: "3.0.0"
 info:
@@ -204,10 +205,9 @@ paths:
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	addr := ln.Addr().String()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	var ctx context.Context
+	ctx, cancel = context.WithCancel(context.Background())
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -216,7 +216,18 @@ paths:
 
 	time.Sleep(50 * time.Millisecond)
 
-	// Test the landing page.
+	wait = func() {
+		if err := <-errCh; err != nil {
+			t.Errorf("serve returned error: %v", err)
+		}
+	}
+	return ln.Addr().String(), cancel, wait
+}
+
+func TestServeSwaggerOnListener_SingleSpecLandingPage(t *testing.T) {
+	addr, cancel, wait := startSingleSpecServer(t)
+	defer func() { cancel(); wait() }()
+
 	resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
 	if err != nil {
 		t.Fatalf("GET / failed: %v", err)
@@ -242,39 +253,37 @@ paths:
 	if !strings.Contains(html, "/spec/api") {
 		t.Error("expected spec URL in HTML")
 	}
-	// No proxy attr when target is not set.
 	if strings.Contains(html, "proxy") {
 		t.Error("expected no proxy attribute without target")
 	}
+}
 
-	// Test the spec endpoint.
-	resp2, err := http.Get(fmt.Sprintf("http://%s/spec/api", addr))
+func TestServeSwaggerOnListener_SingleSpecEndpoint(t *testing.T) {
+	addr, cancel, wait := startSingleSpecServer(t)
+	defer func() { cancel(); wait() }()
+
+	resp, err := http.Get(fmt.Sprintf("http://%s/spec/api", addr))
 	if err != nil {
 		t.Fatalf("GET /spec/api failed: %v", err)
 	}
-	defer func() { _ = resp2.Body.Close() }()
+	defer func() { _ = resp.Body.Close() }()
 
-	if resp2.StatusCode != http.StatusOK {
-		t.Errorf("expected 200 for spec, got %d", resp2.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("expected 200 for spec, got %d", resp.StatusCode)
 	}
-	if ct := resp2.Header.Get("Content-Type"); ct != "application/json" {
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
 		t.Errorf("expected application/json, got %q", ct)
 	}
-	if cors := resp2.Header.Get("Access-Control-Allow-Origin"); cors != "*" {
+	if cors := resp.Header.Get("Access-Control-Allow-Origin"); cors != "*" {
 		t.Errorf("expected CORS header *, got %q", cors)
 	}
 
-	specBody, err := io.ReadAll(resp2.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read spec body: %v", err)
 	}
-	if !strings.Contains(string(specBody), "Test API") {
+	if !strings.Contains(string(body), "Test API") {
 		t.Error("expected spec content in response")
-	}
-
-	cancel()
-	if err := <-errCh; err != nil {
-		t.Errorf("serve returned error: %v", err)
 	}
 }
 

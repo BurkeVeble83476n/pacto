@@ -97,8 +97,8 @@ func TestInferArray(t *testing.T) {
 	}
 }
 
-func TestSchema(t *testing.T) {
-	data := map[string]any{
+func testSchemaData() map[string]any {
+	return map[string]any{
 		"app": map[string]any{
 			"name":  "my-service",
 			"debug": true,
@@ -112,8 +112,10 @@ func TestSchema(t *testing.T) {
 		"timeout":  float64(30),
 		"nothing":  nil,
 	}
+}
 
-	schema := Schema(data)
+func TestSchemaMetadata(t *testing.T) {
+	schema := Schema(testSchemaData())
 
 	if schema["$schema"] != "https://json-schema.org/draft/2020-12/schema" {
 		t.Errorf("$schema = %v, want draft/2020-12", schema["$schema"])
@@ -130,14 +132,12 @@ func TestSchema(t *testing.T) {
 		t.Fatal("properties is not a map")
 	}
 
-	// Check top-level keys exist
 	for _, key := range []string{"app", "database", "features", "timeout", "nothing"} {
 		if _, exists := props[key]; !exists {
 			t.Errorf("missing property %q", key)
 		}
 	}
 
-	// Check required is sorted
 	required, ok := schema["required"].([]string)
 	if !ok {
 		t.Fatal("required is not a string slice")
@@ -151,8 +151,12 @@ func TestSchema(t *testing.T) {
 			t.Errorf("required[%d] = %q, want %q", i, r, expectedRequired[i])
 		}
 	}
+}
 
-	// Check nested type inference
+func TestSchemaTypeInference(t *testing.T) {
+	schema := Schema(testSchemaData())
+	props := schema["properties"].(map[string]any)
+
 	appProps := props["app"].(map[string]any)["properties"].(map[string]any)
 	if appProps["name"].(map[string]any)["type"] != "string" {
 		t.Error("app.name should be string")
@@ -161,14 +165,12 @@ func TestSchema(t *testing.T) {
 		t.Error("app.debug should be boolean")
 	}
 
-	// Check database nested object with array
 	dbProps := props["database"].(map[string]any)["properties"].(map[string]any)
 	replicas := dbProps["replicas"].(map[string]any)
 	if replicas["type"] != "array" {
 		t.Error("database.replicas should be array")
 	}
 
-	// Check scalar types
 	if props["timeout"].(map[string]any)["type"] != "number" {
 		t.Error("timeout should be number")
 	}

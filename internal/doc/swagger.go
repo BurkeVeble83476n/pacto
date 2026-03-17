@@ -111,13 +111,27 @@ func ServeSwaggerOnListener(ctx context.Context, opts SwaggerOptions, ln net.Lis
 	}
 
 	hasProxy := len(targets) > 0
+	if len(opts.Specs) > 1 {
+		for _, s := range opts.Specs {
+			page := buildNavSpecPage(s, opts.Specs, opts.Title, hasProxy)
+			pattern := "/ui/" + s.InterfaceName
+			mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				_, _ = fmt.Fprint(w, page)
+			})
+		}
+	}
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
+		if len(opts.Specs) > 1 {
+			http.Redirect(w, r, "/ui/"+opts.Specs[0].InterfaceName, http.StatusFound)
+			return
+		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = fmt.Fprint(w, buildSwaggerPage(opts.Specs, opts.Title, hasProxy))
+		_, _ = fmt.Fprint(w, buildSingleSpecPage(opts.Specs[0], opts.Title, hasProxy))
 	})
 
 	srv := &http.Server{Handler: mux}
@@ -285,13 +299,6 @@ func convertYAMLToJSON(v any) any {
 	}
 }
 
-func buildSwaggerPage(specs []SwaggerSpec, title string, useProxy bool) string {
-	if len(specs) == 1 {
-		return buildSingleSpecPage(specs[0], title, useProxy)
-	}
-	return buildMultiSpecPage(specs, title, useProxy)
-}
-
 func buildSingleSpecPage(spec SwaggerSpec, title string, useProxy bool) string {
 	proxyAttr := ""
 	if useProxy {
@@ -308,22 +315,26 @@ func buildSingleSpecPage(spec SwaggerSpec, title string, useProxy bool) string {
 </body></html>`, title, spec.InterfaceName, proxyAttr)
 }
 
-func buildMultiSpecPage(specs []SwaggerSpec, title string, useProxy bool) string {
+func buildNavSpecPage(active SwaggerSpec, allSpecs []SwaggerSpec, title string, useProxy bool) string {
 	var links strings.Builder
-	for _, s := range specs {
-		fmt.Fprintf(&links, `      <li><a href="#" onclick="loadSpec('/spec/%s','%s');return false">%s</a></li>`+"\n",
-			s.InterfaceName, s.InterfaceName, s.InterfaceName)
+	for _, s := range allSpecs {
+		activeClass := ""
+		if s.InterfaceName == active.InterfaceName {
+			activeClass = ` class="active"`
+		}
+		fmt.Fprintf(&links, `      <li><a href="/ui/%s"%s>%s</a></li>`+"\n",
+			s.InterfaceName, activeClass, s.InterfaceName)
 	}
 
-	proxyLine := ""
+	proxyAttr := ""
 	if useProxy {
-		proxyLine = `      el.dataset.proxyUrl = '/proxy';` + "\n"
+		proxyAttr = ` data-proxy-url="/proxy"`
 	}
 
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html><head>
   <meta charset="utf-8">
-  <title>%s - API Explorer</title>
+  <title>%s - %s - API Explorer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     nav { background: #1a1a2e; padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
@@ -338,21 +349,7 @@ func buildMultiSpecPage(specs []SwaggerSpec, title string, useProxy bool) string
     <ul>
 %s    </ul>
   </nav>
-  <div id="api-container"></div>
+  <script id="api-reference" data-url="/spec/%s"%s></script>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
-  <script>
-    function loadSpec(url, name) {
-      document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
-      event.target.classList.add('active');
-      const container = document.getElementById('api-container');
-      container.innerHTML = '';
-      const el = document.createElement('script');
-      el.id = 'api-reference';
-      el.dataset.url = url;
-%s      container.appendChild(el);
-    }
-    // Load first spec by default.
-    document.querySelector('nav a').click();
-  </script>
-</body></html>`, title, title, links.String(), proxyLine)
+</body></html>`, title, active.InterfaceName, title, links.String(), active.InterfaceName, proxyAttr)
 }

@@ -71,8 +71,13 @@ func downloadAndReplace(downloadURL string) error {
 		return fmt.Errorf("failed to resolve executable path: %w", err)
 	}
 
+	return downloadAndInstall(downloadURL, execPath)
+}
+
+// downloadAndInstall downloads a binary and atomically replaces the file at targetPath.
+func downloadAndInstall(downloadURL, targetPath string) error {
 	// Download to temp file in the same directory (ensures same filesystem for atomic rename)
-	tmpFile, err := os.CreateTemp(filepath.Dir(execPath), "pacto-update-*")
+	tmpFile, err := os.CreateTemp(filepath.Dir(targetPath), "pacto-update-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp file: %w", err)
 	}
@@ -91,7 +96,7 @@ func downloadAndReplace(downloadURL string) error {
 		return fmt.Errorf("failed to set executable permission: %w", err)
 	}
 
-	if err := osRename(tmpPath, execPath); err != nil {
+	if err := osRename(tmpPath, targetPath); err != nil {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 

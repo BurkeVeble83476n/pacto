@@ -25,11 +25,12 @@ No forms. No tickets. No wiki pages that go stale. One YAML file, validated by t
 
 ```mermaid
 flowchart LR
-    A[Write code] --> B[Define pacto.yaml]
-    B --> C[pacto validate]
-    C --> D[pacto pack]
-    D --> E[pacto push]
-    E --> F[CI / Platform picks it up]
+    A[Write code] --> B[Infer schemas]
+    B --> C[Define pacto.yaml]
+    C --> D[pacto validate]
+    D --> E[pacto pack]
+    E --> F[pacto push]
+    F --> G[CI / Platform picks it up]
 ```
 
 ### 1. Initialize your contract
@@ -40,7 +41,48 @@ pacto init my-service
 
 This scaffolds a contract with sensible defaults. Edit `pacto.yaml` to match your service.
 
-### 2. Declare your interfaces (optional)
+### 2. Infer schemas from your code (optional)
+
+If your service has a configuration file, use the `schema-infer` plugin to generate a JSON Schema from it. Use `-o` to write the output directly into your bundle:
+
+```bash
+pacto generate schema-infer my-service --option file=config.yaml -o my-service
+```
+
+This generates `config.schema.json`. Reference it in your contract:
+
+```yaml
+configuration:
+  schema: config.schema.json
+```
+
+If your service exposes an HTTP API using FastAPI or Huma, use the `openapi-infer` plugin to extract an OpenAPI 3.1 spec from your source code:
+
+```bash
+# Auto-detect framework (generates interfaces/openapi.yaml)
+pacto generate openapi-infer my-service -o my-service
+
+# Override framework detection
+pacto generate openapi-infer my-service -o my-service --option framework=fastapi
+
+# Custom output path (format inferred from extension)
+pacto generate openapi-infer my-service -o my-service --option output=interfaces/openapi.json
+```
+
+Then reference the generated spec in your contract:
+
+```yaml
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+    visibility: public
+    contract: interfaces/openapi.yaml
+```
+
+Both plugins are installed automatically with Pacto. See the [Official plugins]({{ site.baseurl }}{% link plugins.md %}#official-plugins) section for details.
+
+### 3. Declare your interfaces (optional)
 
 List every boundary your service exposes. Services with no network interfaces (e.g. batch jobs or shared libraries) may omit this section:
 
@@ -60,7 +102,7 @@ interfaces:
 
 Include the actual interface files (OpenAPI specs, protobuf definitions, event schemas) in the bundle.
 
-### 3. Define your runtime semantics (optional)
+### 4. Define your runtime semantics (optional)
 
 This is where you tell the platform *how* your service behaves — not how to deploy it, but what it *is*:
 
@@ -88,7 +130,7 @@ runtime:
 
 The answers determine how platforms provision infrastructure for your service. See [runtime.state]({{ site.baseurl }}{% link contract-reference.md %}#runtimestate) in the Contract Reference for the full explanation.
 
-### 4. Declare dependencies
+### 5. Declare dependencies
 
 If your service depends on other Pacto-enabled services:
 
@@ -124,7 +166,7 @@ If your service depends on a cloud-managed resource (e.g. a database or message 
 
 Use `pacto graph` to visualize your dependency tree.
 
-### 5. Validate before pushing
+### 6. Validate before pushing
 
 ```bash
 pacto validate my-service
@@ -136,7 +178,7 @@ Validation catches errors in three layers:
 2. **Cross-field** — interface references match, state invariants hold, files exist
 3. **Semantic** — strategy consistency warnings
 
-### 6. Pack and push
+### 7. Pack and push
 
 ```bash
 pacto pack my-service

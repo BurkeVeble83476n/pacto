@@ -21,6 +21,22 @@ This means you can turn a Pacto contract into anything — Helm charts, Terrafor
 
 ---
 
+## Official plugins
+
+Pacto ships with two official plugins that are automatically installed alongside the CLI via the install script:
+
+| Plugin | Description |
+|--------|-------------|
+| **pacto-plugin-schema-infer** | Infers a JSON Schema from sample configuration files (JSON, YAML, TOML) for use in Pacto contracts. |
+| **pacto-plugin-openapi-infer** | Auto-detects web frameworks and extracts OpenAPI 3.1 specs from source code. Currently supports FastAPI and Huma. |
+
+These plugins are maintained in the [pacto-plugins](https://github.com/TrianaLab/pacto-plugins) repository. Refer to each plugin's README for detailed usage and options:
+
+- [pacto-plugin-schema-infer](https://github.com/TrianaLab/pacto-plugins/tree/main/plugins/pacto-plugin-schema-infer)
+- [pacto-plugin-openapi-infer](https://github.com/TrianaLab/pacto-plugins/tree/main/plugins/pacto-plugin-openapi-infer)
+
+---
+
 ## Why plugins?
 
 Pacto describes *what* a service is. Plugins decide *how* to deploy it. The contract is the input; deployment artifacts are the output. This separation keeps Pacto platform-agnostic while letting each team generate exactly the artifacts their infrastructure needs.

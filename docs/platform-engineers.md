@@ -187,6 +187,12 @@ Use Pacto in CI pipelines to catch problems before deployment:
 ```yaml
 # Example CI pipeline
 steps:
+  - name: Infer config schema from sample config
+    run: pacto generate schema-infer . --option file=config.yaml -o .
+
+  - name: Infer OpenAPI spec from source code
+    run: pacto generate openapi-infer . -o .
+
   - name: Validate contract
     run: pacto validate .
 
@@ -206,6 +212,16 @@ Using GitHub Actions? The same workflow with [pacto-actions](https://github.com/
 
 ```yaml
 steps:
+  - uses: trianalab/pacto-actions@v1
+    with:
+      command: setup
+
+  - name: Infer config schema from sample config
+    run: pacto generate schema-infer ./my-service --option file=config.yaml -o ./my-service
+
+  - name: Infer OpenAPI spec from source code
+    run: pacto generate openapi-infer ./my-service -o ./my-service
+
   - uses: trianalab/pacto-actions@v1
     with:
       command: validate

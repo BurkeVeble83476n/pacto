@@ -23,7 +23,7 @@ coverage:
 	@go tool cover -func=coverage.out | tail -1
 
 lint:
-	gofmt -s -l $(shell find . -name '*.go' -not -path './plugins/*')
+	gofmt -s -l $(shell find . -name '*.go')
 	go vet ./...
 
 gen-cli-docs:

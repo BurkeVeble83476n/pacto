@@ -157,9 +157,14 @@ func SetTestOverrides(client *http.Client, apiBaseURL, downloadBaseURL string, e
 	}
 }
 
-// fetchLatestVersion fetches the latest release tag from GitHub.
+// fetchLatestVersion fetches the latest release tag for pacto from GitHub.
 func fetchLatestVersion() (string, error) {
-	url := githubAPIBaseURL + "/repos/TrianaLab/pacto/releases/latest"
+	return fetchLatestRepoVersion("TrianaLab/pacto")
+}
+
+// fetchLatestRepoVersion fetches the latest release tag for the given repo from GitHub.
+func fetchLatestRepoVersion(repo string) (string, error) {
+	url := githubAPIBaseURL + "/repos/" + repo + "/releases/latest"
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err

@@ -291,6 +291,110 @@ func TestUpdateCommand_Success(t *testing.T) {
 	}
 }
 
+func TestUpdateCommand_WithPlugins(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("PACTO_NO_UPDATE_CHECK", "1")
+	if err := os.MkdirAll(filepath.Join(tmpDir, "pacto"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/TrianaLab/pacto/releases/tags/v2.0.0":
+			_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v2.0.0"})
+		case "/repos/TrianaLab/pacto-plugins/releases/latest":
+			_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v1.0.0"})
+		default:
+			_, _ = w.Write([]byte("new-binary"))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	execDir := t.TempDir()
+	execPath := filepath.Join(execDir, "pacto")
+	if err := os.WriteFile(execPath, []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(execDir, "pacto-plugin-foo"), []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanup := update.SetTestOverrides(
+		server.Client(), server.URL, server.URL,
+		func() (string, error) { return execPath, nil },
+	)
+	defer cleanup()
+
+	svc := app.NewService(nil, nil)
+	root := cli.NewRootCommand(svc, "v0.0.1")
+	root.SetArgs([]string{"update", "v2.0.0"})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	if err := root.Execute(); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Updated pacto v0.0.1 -> v2.0.0") {
+		t.Errorf("expected pacto update message, got: %s", out.String())
+	}
+	if !strings.Contains(out.String(), "Updated plugin pacto-plugin-foo -> v1.0.0") {
+		t.Errorf("expected plugin update message, got: %s", out.String())
+	}
+}
+
+func TestUpdateCommand_PluginFailureIsWarning(t *testing.T) {
+	tmpDir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", tmpDir)
+	t.Setenv("PACTO_NO_UPDATE_CHECK", "1")
+	if err := os.MkdirAll(filepath.Join(tmpDir, "pacto"), 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/repos/TrianaLab/pacto/releases/tags/v2.0.0":
+			_ = json.NewEncoder(w).Encode(map[string]string{"tag_name": "v2.0.0"})
+		case "/repos/TrianaLab/pacto-plugins/releases/latest":
+			w.WriteHeader(http.StatusInternalServerError)
+		default:
+			_, _ = w.Write([]byte("new-binary"))
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	execDir := t.TempDir()
+	execPath := filepath.Join(execDir, "pacto")
+	if err := os.WriteFile(execPath, []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(execDir, "pacto-plugin-foo"), []byte("old"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	cleanup := update.SetTestOverrides(
+		server.Client(), server.URL, server.URL,
+		func() (string, error) { return execPath, nil },
+	)
+	defer cleanup()
+
+	svc := app.NewService(nil, nil)
+	root := cli.NewRootCommand(svc, "v0.0.1")
+	root.SetArgs([]string{"update", "v2.0.0"})
+	var out bytes.Buffer
+	root.SetOut(&out)
+	root.SetErr(&out)
+
+	// Should NOT return an error - plugin failure is a warning
+	if err := root.Execute(); err != nil {
+		t.Fatalf("update should succeed even if plugin update fails: %v", err)
+	}
+	if !strings.Contains(out.String(), "Warning: plugin update failed") {
+		t.Errorf("expected plugin warning, got: %s", out.String())
+	}
+}
+
 func TestUpdateCommand_Error(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)

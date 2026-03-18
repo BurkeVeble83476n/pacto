@@ -36,6 +36,14 @@ func newUpdateCommand(version string) *cobra.Command {
 			}
 
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Updated pacto %s -> %s\n", result.PreviousVersion, result.NewVersion)
+
+			pluginResults, err := update.UpdatePlugins()
+			if err != nil {
+				_, _ = fmt.Fprintf(cmd.OutOrStderr(), "Warning: plugin update failed: %v\n", err)
+			}
+			for _, pr := range pluginResults {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Updated plugin %s -> %s\n", pr.Name, pr.Version)
+			}
 			return nil
 		},
 	}

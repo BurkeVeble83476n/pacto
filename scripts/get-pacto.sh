@@ -7,6 +7,9 @@ set -e
 : ${PACTO_INSTALL_DIR:="/usr/local/bin"}
 : ${REPO:="TrianaLab/pacto"}
 : ${API_URL:="https://api.github.com/repos/$REPO/releases"}
+: ${PLUGINS_REPO:="TrianaLab/pacto-plugins"}
+: ${PLUGINS_API_URL:="https://api.github.com/repos/$PLUGINS_REPO/releases"}
+PLUGINS="pacto-plugin-schema-infer pacto-plugin-openapi-infer"
 
 HAS_CURL="$(type curl >/dev/null 2>&1 && echo true || echo false)"
 HAS_WGET="$(type wget >/dev/null 2>&1 && echo true || echo false)"
@@ -105,6 +108,51 @@ installFile() {
   echo "$BINARY_NAME installed to $PACTO_INSTALL_DIR/$BINARY_NAME$EXT"
 }
 
+checkPluginsVersion() {
+  if [ "$HAS_CURL" = "true" ]; then
+    PLUGINS_TAG=$(curl -sSL "$PLUGINS_API_URL/latest" | grep -E '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+  else
+    PLUGINS_TAG=$(wget -qO- "$PLUGINS_API_URL/latest" | grep -E '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+  fi
+  if [ -z "$PLUGINS_TAG" ]; then
+    echo "Warning: failed to fetch latest plugins version, skipping plugin installation" >&2
+    return 1
+  fi
+}
+
+downloadPlugin() {
+  plugin_name="$1"
+  filename="${plugin_name}_${OS}_${ARCH}${EXT}"
+  url="https://github.com/$PLUGINS_REPO/releases/download/$PLUGINS_TAG/$filename"
+  tmp="$(mktemp -d)"
+  target="$tmp/$filename"
+  if [ "$HAS_CURL" = "true" ]; then
+    curl -fsSL "$url" -o "$target"
+  else
+    wget -qO "$target" "$url"
+  fi
+  chmod +x "$target"
+  mv "$target" "$tmp/$plugin_name$EXT"
+  DOWNLOAD_DIR="$tmp"
+}
+
+installPlugin() {
+  plugin_name="$1"
+  runAsRoot mv "$DOWNLOAD_DIR/$plugin_name$EXT" "$PACTO_INSTALL_DIR/"
+  echo "$plugin_name installed to $PACTO_INSTALL_DIR/$plugin_name$EXT"
+}
+
+installPlugins() {
+  if ! checkPluginsVersion; then
+    return
+  fi
+  echo "Installing official plugins ($PLUGINS_TAG)..."
+  for plugin in $PLUGINS; do
+    downloadPlugin "$plugin"
+    installPlugin "$plugin"
+  done
+}
+
 help() {
   echo "Usage: get-pacto.sh [--version <version>] [--no-sudo] [--help]"
   echo "  --version, -v specify version (e.g. v1.2.3)"
@@ -155,6 +203,8 @@ if [ "$OS" = "windows" ]; then
   EXT=".exe"
 fi
 
+echo "Installing $BINARY_NAME $TAG..."
 checkInstalledVersion
 downloadFile
 installFile
+installPlugins

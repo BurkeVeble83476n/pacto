@@ -202,14 +202,36 @@ steps:
     run: pacto graph .
 ```
 
-{: .tip }
-Using GitHub Actions? Check out the official [Pacto CLI action]({{ site.baseurl }}{% link github-actions.md %}).
+Using GitHub Actions? The same workflow with [pacto-actions](https://github.com/trianalab/pacto-actions):
+
+```yaml
+steps:
+  - uses: trianalab/pacto-actions@v1
+    with:
+      command: validate
+      path: ./my-service
+
+  - uses: trianalab/pacto-actions@v1
+    with:
+      command: diff
+      old: oci://ghcr.io/my-org/my-service
+      new: ./my-service
+      comment-on-pr: 'true'
+
+  - uses: trianalab/pacto-actions@v1
+    if: github.ref == 'refs/heads/main'
+    with:
+      command: push
+      ref: oci://ghcr.io/my-org/my-service
+      path: ./my-service
+```
+
+See [pacto-actions](https://github.com/trianalab/pacto-actions) for full documentation including multi-service workflows, doc generation, and authentication options.
 
 ---
 
 ## Tips
 
-- **Automate diff checks.** Run `pacto diff` in CI to catch breaking changes before they reach production.
 - **Build a plugin for your platform.** A Helm plugin, Terraform plugin, or custom manifest generator can consume Pacto contracts deterministically.
 - **Use `pacto graph` to understand impact.** Before upgrading a shared service, check what depends on it.
 - **Disable cache in CI.** Use `--no-cache` or `PACTO_NO_CACHE=1` to ensure fresh OCI pulls in pipelines where the cache might be stale.

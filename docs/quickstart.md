@@ -114,6 +114,21 @@ $ pacto doc my-service --serve
 Serving documentation at http://127.0.0.1:8484
 ```
 
+## 7. Detect breaking changes
+
+Make a change to your contract (e.g. modify a port number) and diff it against the version you just pushed:
+
+```bash
+# Edit your contract — change the port in pacto.yaml
+# Then diff against the published version
+$ pacto diff oci://ghcr.io/your-org/my-service-pacto:1.0.0 my-service
+Classification: BREAKING
+Changes (1):
+  [BREAKING] interfaces.port (modified): interfaces.port modified [8080 -> 9090]
+```
+
+Exit code is non-zero when breaking changes are detected — use this in CI to gate merges. See [For Platform Engineers]({{ site.baseurl }}{% link platform-engineers.md %}) for the full CI integration guide.
+
 ---
 
 ## What to do next

@@ -19,6 +19,21 @@ No runtime agents. No sidecars. No new infrastructure. Pacto runs at build time 
 
 ---
 
+## Breaking change detection
+
+Someone changed a service — bumped the version, moved the port, removed an API endpoint, and dropped a config property. Pacto caught it before the merge:
+
+| Classification | Path | Change | Old | New |
+|---|---|---|---|---|
+| NON_BREAKING | `service.version` | modified | `1.0.0` | `2.0.0` |
+| BREAKING | `interfaces.port` | modified | `8081` | `9090` |
+| BREAKING | `openapi.paths[/predict]` | removed | `/predict` | — |
+| BREAKING | `configuration.properties[model_path]` | removed | `model_path` | — |
+
+This output is generated automatically by `pacto diff` (with `--output-format markdown` for the table). The exit code is non-zero on breaking changes, so it can gate merges in CI.
+
+---
+
 ## How it works
 
 ```
@@ -256,6 +271,8 @@ This distinction matters because:
 - **SBOM diffing** — optional SPDX or CycloneDX SBOM inclusion with automatic package-level change detection on `pacto diff`
 - **AI assistant integration** — `pacto mcp` exposes all operations as [MCP](https://modelcontextprotocol.io) tools for Claude, Cursor, and Copilot
 
+Interested in contributing? See the [Architecture](https://trianalab.github.io/pacto/architecture/) guide for the internal design.
+
 ---
 
 ## AI-native contracts
@@ -411,7 +428,6 @@ Full documentation at **[trianalab.github.io/pacto](https://trianalab.github.io/
 | [MCP Integration](https://trianalab.github.io/pacto/mcp-integration) | Connect AI tools (Claude, Cursor, Copilot) to Pacto via MCP |
 | [Plugin Development](https://trianalab.github.io/pacto/plugins) | Build plugins to generate artifacts from contracts |
 | [Examples](https://trianalab.github.io/pacto/examples) | PostgreSQL, Redis, RabbitMQ, NGINX, Cron Worker |
-| [Demo](https://github.com/TrianaLab/pacto-demo) | Complete working demo repository |
 | [Architecture](https://trianalab.github.io/pacto/architecture) | Internal design for contributors |
 
 ---

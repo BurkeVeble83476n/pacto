@@ -95,9 +95,9 @@ verifyChecksum() {
 
   tmp_checksums="$(mktemp)"
   if [ "$HAS_CURL" = "true" ]; then
-    curl -fsSL "$checksums_url" -o "$tmp_checksums" 2>/dev/null
+    curl -fsSL "$checksums_url" -o "$tmp_checksums" 2>/dev/null || true
   else
-    wget -qO "$tmp_checksums" "$checksums_url" 2>/dev/null
+    wget -qO "$tmp_checksums" "$checksums_url" 2>/dev/null || true
   fi
 
   if [ ! -s "$tmp_checksums" ]; then

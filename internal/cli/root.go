@@ -15,6 +15,9 @@ import (
 
 const outputFormatKey = "output-format"
 
+// checkForUpdateFn is the function used to check for updates, overridable in tests.
+var checkForUpdateFn = update.CheckForUpdate
+
 // NewRootCommand constructs the Cobra command tree with the given app service.
 func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 	v := viper.New()
@@ -77,7 +80,7 @@ func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 						updateResultCh <- nil
 					}
 				}()
-				updateResultCh <- update.CheckForUpdate(version)
+				updateResultCh <- checkForUpdateFn(version)
 			}()
 		}
 

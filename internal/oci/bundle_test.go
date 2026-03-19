@@ -105,6 +105,32 @@ func materializeImage(t *testing.T, img v1.Image) v1.Image {
 	return materialized
 }
 
+func TestBundleToImage_NilBundle(t *testing.T) {
+	_, err := bundleToImage(nil)
+	if err == nil {
+		t.Error("expected error for nil bundle")
+	}
+}
+
+func TestBundleToImage_NilContract(t *testing.T) {
+	b := &contract.Bundle{Contract: nil, FS: fstest.MapFS{}}
+	_, err := bundleToImage(b)
+	if err == nil {
+		t.Error("expected error for nil contract")
+	}
+}
+
+func TestBundleToImage_NilFS(t *testing.T) {
+	b := &contract.Bundle{
+		Contract: &contract.Contract{Service: contract.ServiceIdentity{Name: "svc", Version: "1.0.0"}},
+		FS:       nil,
+	}
+	_, err := bundleToImage(b)
+	if err == nil {
+		t.Error("expected error for nil FS")
+	}
+}
+
 func TestBundleToImage_Labels(t *testing.T) {
 	b := testBundle()
 	img, err := bundleToImage(b)
@@ -528,6 +554,33 @@ func TestExtractTar_SkipsDotEntry(t *testing.T) {
 
 	if string(data) != "hello" {
 		t.Errorf("content = %q, want %q", string(data), "hello")
+	}
+}
+
+func TestExtractTar_PathTraversal(t *testing.T) {
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+	content := []byte("malicious")
+	if err := tw.WriteHeader(&tar.Header{
+		Name: "foo/../../../etc/passwd",
+		Size: int64(len(content)),
+		Mode: 0644,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(content); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := extractTar(&buf)
+	if err == nil {
+		t.Fatal("expected error for path traversal in tar")
+	}
+	if !strings.Contains(err.Error(), "invalid path") {
+		t.Errorf("expected 'invalid path' error, got: %v", err)
 	}
 }
 

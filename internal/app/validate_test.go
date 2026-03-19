@@ -85,6 +85,22 @@ func TestValidate_OCIRef_MissingPactoYAML(t *testing.T) {
 	}
 }
 
+func TestValidate_NoRawYAMLNoFS(t *testing.T) {
+	store := &mockBundleStore{
+		PullFn: func(_ context.Context, _ string) (*contract.Bundle, error) {
+			b := testBundle()
+			b.RawYAML = nil
+			b.FS = nil
+			return b, nil
+		},
+	}
+	svc := NewService(store, nil)
+	_, err := svc.Validate(context.Background(), ValidateOptions{Path: "oci://ghcr.io/acme/svc:1.0.0"})
+	if err == nil {
+		t.Error("expected error when bundle has no raw YAML and no FS")
+	}
+}
+
 func TestValidate_OCIRef_NilStore(t *testing.T) {
 	svc := NewService(nil, nil)
 	result, err := svc.Validate(context.Background(), ValidateOptions{Path: "oci://ghcr.io/acme/svc:1.0.0"})

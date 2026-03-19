@@ -22,6 +22,20 @@ func (m *mockFetcher) Fetch(_ context.Context, dep contract.Dependency) (*contra
 	return &contract.Bundle{Contract: c}, nil
 }
 
+// nilBundleFetcher returns a nil bundle without error.
+type nilBundleFetcher struct{}
+
+func (nilBundleFetcher) Fetch(_ context.Context, _ contract.Dependency) (*contract.Bundle, error) {
+	return nil, nil
+}
+
+// nilContractFetcher returns a bundle with nil Contract.
+type nilContractFetcher struct{}
+
+func (nilContractFetcher) Fetch(_ context.Context, _ contract.Dependency) (*contract.Bundle, error) {
+	return &contract.Bundle{Contract: nil}, nil
+}
+
 // blockingFetcher blocks until signaled, then delegates to an inner fetcher.
 type blockingFetcher struct {
 	inner   ContractFetcher
@@ -792,26 +806,28 @@ func TestResolveEdge_PendingWaitGetsError(t *testing.T) {
 }
 
 func TestResolveEdge_PendingWaitGetsSuccess(t *testing.T) {
-	// Directly exercise the pending-wait success path by pre-populating
-	// the resolver with a closed pending channel and a visited node.
-	// A single call to resolveEdge sees the pending entry, receives
-	// from the already-closed channel, finds the node in visited, and
-	// returns a shared edge with node info.
+	// Exercise the pending-wait success path: ref is NOT in visited initially
+	// (so the visited short-circuit at line 143 is skipped), IS in pending,
+	// and becomes available in visited after the channel is closed.
 	r := &resolver{
 		fetcher: &mockFetcher{},
-		visited: map[string]*Node{
-			"oci://registry.io/svc-b:1.0.0": {
-				Name: "svc-b", Version: "1.0.0", Ref: "oci://registry.io/svc-b:1.0.0",
-			},
-		},
+		visited: map[string]*Node{},
 		errors:  map[string]string{},
 		pending: map[string]chan struct{}{},
 	}
 
 	ref := "oci://registry.io/svc-b:1.0.0"
 	ch := make(chan struct{})
-	close(ch) // pre-close so <-ch returns immediately
 	r.pending[ref] = ch
+
+	// A goroutine simulates another resolver adding the node to visited
+	// and then closing the pending channel (as the real code does).
+	go func() {
+		r.mu.Lock()
+		r.visited[ref] = &Node{Name: "svc-b", Version: "1.0.0", Ref: ref}
+		r.mu.Unlock()
+		close(ch)
+	}()
 
 	dep := contract.Dependency{Ref: ref, Required: true, Compatibility: "^1.0.0"}
 	edge := r.resolveEdge(context.Background(), dep, []string{"root"})
@@ -827,6 +843,50 @@ func TestResolveEdge_PendingWaitGetsSuccess(t *testing.T) {
 	}
 	if edge.Error != "" {
 		t.Errorf("expected no error, got %q", edge.Error)
+	}
+}
+
+func TestResolve_NilBundleFromFetcher(t *testing.T) {
+	// Fetcher returns a nil bundle (not an error), exercising the nil-bundle guard.
+	fetcher := &nilBundleFetcher{}
+
+	c := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "svc-a", Version: "1.0.0"},
+		Dependencies: []contract.Dependency{
+			{Ref: "oci://registry.io/svc-b:1.0.0", Required: true, Compatibility: "^1.0.0"},
+		},
+	}
+
+	result := Resolve(context.Background(), c, fetcher)
+
+	edge := result.Root.Dependencies[0]
+	if edge.Error == "" {
+		t.Error("expected error for nil bundle from fetcher")
+	}
+	if edge.Node != nil {
+		t.Error("expected nil node when fetcher returns nil bundle")
+	}
+}
+
+func TestResolve_NilContractInBundle(t *testing.T) {
+	// Fetcher returns a bundle with nil Contract, exercising the nil-contract guard.
+	fetcher := &nilContractFetcher{}
+
+	c := &contract.Contract{
+		Service: contract.ServiceIdentity{Name: "svc-a", Version: "1.0.0"},
+		Dependencies: []contract.Dependency{
+			{Ref: "oci://registry.io/svc-b:1.0.0", Required: true, Compatibility: "^1.0.0"},
+		},
+	}
+
+	result := Resolve(context.Background(), c, fetcher)
+
+	edge := result.Root.Dependencies[0]
+	if edge.Error == "" {
+		t.Error("expected error for nil contract in bundle")
+	}
+	if edge.Node != nil {
+		t.Error("expected nil node when bundle has nil contract")
 	}
 }
 

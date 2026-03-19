@@ -951,6 +951,32 @@ paths: {}
 	<-errCh
 }
 
+func TestProxyHandler_InvalidTargetURL(t *testing.T) {
+	handler := newProxyHandler([]string{"http://example.com"})
+	req := httptest.NewRequest(http.MethodGet, "/proxy?scalar_url=://invalid", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for invalid URL, got %d", rr.Code)
+	}
+}
+
+func TestProxyHandler_InvalidAllowedEntry(t *testing.T) {
+	// An unparseable entry in the allowed list should be skipped (continue),
+	// and the valid target should still be forbidden since it doesn't match.
+	handler := newProxyHandler([]string{"://invalid-allowed"})
+	req := httptest.NewRequest(http.MethodGet, "/proxy?scalar_url=http://example.com/path", nil)
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusForbidden {
+		t.Errorf("expected 403 when allowed list has unparseable entry, got %d", rr.Code)
+	}
+}
+
 func TestOverrideServers_InvalidJSON(t *testing.T) {
 	_, err := overrideServers([]byte(`{invalid`), "http://localhost:8080")
 	if err == nil {

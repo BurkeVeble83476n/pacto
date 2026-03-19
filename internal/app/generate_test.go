@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/trianalab/pacto/internal/plugin"
@@ -274,6 +275,36 @@ func TestGenerate_AbsPathError(t *testing.T) {
 	})
 	if err == nil {
 		t.Error("expected error when filepath.Abs fails")
+	}
+}
+
+func TestGenerate_PathTraversalDotDot(t *testing.T) {
+	bundleDir := writeTestBundle(t)
+	dir := t.TempDir()
+	outputDir := filepath.Join(dir, "gen-output")
+
+	// Use a path containing ".." that doesn't escape the output dir
+	// (e.g. "foo/../bar.txt" resolves to "bar.txt" within the dir).
+	// This triggers the strings.Contains(f.Path, "..") guard.
+	runner := &mockPluginRunner{
+		RunFn: func(_ context.Context, _ string, _ plugin.GenerateRequest) (*plugin.GenerateResponse, error) {
+			return &plugin.GenerateResponse{
+				Files: []plugin.GeneratedFile{{Path: "sub/../out.txt", Content: "hello"}},
+			}, nil
+		},
+	}
+
+	svc := NewService(nil, runner)
+	_, err := svc.Generate(context.Background(), GenerateOptions{
+		Path:      bundleDir,
+		OutputDir: outputDir,
+		Plugin:    "bad-plugin",
+	})
+	if err == nil {
+		t.Fatal("expected error for path containing '..'")
+	}
+	if !strings.Contains(err.Error(), "path traversal") {
+		t.Errorf("expected 'path traversal' error, got: %v", err)
 	}
 }
 

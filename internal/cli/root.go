@@ -72,6 +72,11 @@ func NewRootCommand(svc *app.Service, version string) *cobra.Command {
 		// Start async update check
 		if version != "dev" && os.Getenv("PACTO_NO_UPDATE_CHECK") != "1" {
 			go func() {
+				defer func() {
+					if r := recover(); r != nil {
+						updateResultCh <- nil
+					}
+				}()
 				updateResultCh <- update.CheckForUpdate(version)
 			}()
 		}

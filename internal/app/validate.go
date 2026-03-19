@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"log/slog"
 
@@ -42,12 +43,14 @@ func (s *Service) Validate(ctx context.Context, opts ValidateOptions) (*Validate
 	var rawYAML []byte
 	if bundle.RawYAML != nil {
 		rawYAML = bundle.RawYAML
-	} else {
+	} else if bundle.FS != nil {
 		var readErr error
 		rawYAML, readErr = fs.ReadFile(bundle.FS, DefaultContractPath)
 		if readErr != nil {
 			return nil, readErr
 		}
+	} else {
+		return nil, fmt.Errorf("bundle has no raw YAML or filesystem")
 	}
 
 	slog.Debug("running validation", "ref", ref)

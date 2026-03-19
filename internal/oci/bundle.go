@@ -33,6 +33,10 @@ var (
 
 // bundleToImage converts a contract.Bundle into an OCI v1.Image.
 func bundleToImage(b *contract.Bundle) (v1.Image, error) {
+	if b == nil || b.Contract == nil || b.FS == nil {
+		return nil, fmt.Errorf("bundle, contract, and filesystem are required")
+	}
+
 	// Start with empty image, store metadata as labels.
 	img := empty.Image
 
@@ -179,6 +183,9 @@ func extractTar(r io.Reader) (fs.FS, error) {
 		name := filepath.ToSlash(strings.TrimPrefix(header.Name, "./"))
 		if name == "" || name == "." {
 			continue
+		}
+		if strings.Contains(name, "..") {
+			return nil, fmt.Errorf("invalid path in tar: %s", header.Name)
 		}
 
 		if header.Typeflag == tar.TypeDir {

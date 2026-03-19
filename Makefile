@@ -2,7 +2,11 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
 GOBIN := $(shell go env GOBIN 2>/dev/null)
 ifeq ($(GOBIN),)
-GOBIN := $(shell go env GOPATH)/bin
+GOPATH := $(shell go env GOPATH 2>/dev/null)
+ifeq ($(GOPATH),)
+GOPATH := $(HOME)/go
+endif
+GOBIN := $(GOPATH)/bin
 endif
 
 .PHONY: build test e2e coverage lint clean docs gen-cli-docs ci

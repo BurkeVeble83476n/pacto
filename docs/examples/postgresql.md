@@ -62,6 +62,9 @@ metadata:
   storage-class: ssd
 ```
 
+{: .note }
+> The `sql` interface uses `type: grpc` as the closest available protocol type for PostgreSQL's binary wire protocol. The Pacto schema currently supports `http`, `grpc`, and `event` — there is no dedicated `tcp` type. The `.proto` contract file is illustrative; in practice you may omit the interface or use a custom schema.
+
 ### Key decisions
 
 - **`state.type: stateful`** with **`durability: persistent`** — PostgreSQL needs persistent storage that survives pod restarts

@@ -29,7 +29,7 @@ func newDocCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
   # Serve on a custom port
   pacto doc my-service --serve --port 9090
 
-  # Launch an interactive API explorer (Swagger/Scalar UI)
+  # Launch an interactive API explorer (Scalar UI)
   pacto doc my-service --ui swagger
 
   # Select a specific interface

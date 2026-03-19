@@ -88,9 +88,53 @@ checkInstalledVersion() {
   fi
 }
 
+verifyChecksum() {
+  local file="$1"
+  local checksums_url="$2"
+  local filename="$3"
+
+  tmp_checksums="$(mktemp)"
+  if [ "$HAS_CURL" = "true" ]; then
+    curl -fsSL "$checksums_url" -o "$tmp_checksums" 2>/dev/null
+  else
+    wget -qO "$tmp_checksums" "$checksums_url" 2>/dev/null
+  fi
+
+  if [ ! -s "$tmp_checksums" ]; then
+    rm -f "$tmp_checksums"
+    echo "Warning: checksums file not available, skipping verification" >&2
+    return 0
+  fi
+
+  expected=$(grep "$filename" "$tmp_checksums" | awk '{print $1}')
+  rm -f "$tmp_checksums"
+
+  if [ -z "$expected" ]; then
+    echo "Warning: no checksum found for $filename, skipping verification" >&2
+    return 0
+  fi
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    actual=$(sha256sum "$file" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    actual=$(shasum -a 256 "$file" | awk '{print $1}')
+  else
+    echo "Warning: sha256sum/shasum not found, skipping verification" >&2
+    return 0
+  fi
+
+  if [ "$expected" != "$actual" ]; then
+    echo "Checksum verification failed for $filename" >&2
+    echo "  expected: $expected" >&2
+    echo "  actual:   $actual" >&2
+    return 1
+  fi
+}
+
 downloadFile() {
   filename="${BINARY_NAME}_${OS}_${ARCH}${EXT}"
   url="https://github.com/$REPO/releases/download/$TAG/$filename"
+  checksums_url="https://github.com/$REPO/releases/download/$TAG/checksums.txt"
   tmp="$(mktemp -d)"
   target="$tmp/$filename"
   if [ "$HAS_CURL" = "true" ]; then
@@ -98,6 +142,7 @@ downloadFile() {
   else
     wget -qO "$target" "$url"
   fi
+  verifyChecksum "$target" "$checksums_url" "$filename"
   chmod +x "$target"
   mv "$target" "$tmp/$BINARY_NAME$EXT"
   DOWNLOAD_DIR="$tmp"

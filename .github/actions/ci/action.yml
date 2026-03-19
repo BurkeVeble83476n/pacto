@@ -44,11 +44,7 @@ runs:
         git diff --exit-code docs/cli-reference.md
       shell: bash
 
-    - name: Run unit tests
-      run: go test ./...
-      shell: bash
-
-    - name: Enforce 100% test coverage
+    - name: Run unit tests with 100% coverage enforcement
       run: |
         go test $(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.out
         total=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $NF}')

@@ -9,7 +9,7 @@ endif
 GOBIN := $(GOPATH)/bin
 endif
 
-.PHONY: build test e2e coverage lint clean docs gen-cli-docs ci
+.PHONY: build test e2e coverage lint clean docs gen-cli-docs ci ci-test
 
 build:
 	rm -f "$(GOBIN)/pacto"
@@ -38,11 +38,11 @@ BUNDLE := $(shell command -v /opt/homebrew/opt/ruby@3.3/bin/bundle 2>/dev/null |
 docs:
 	cd docs && $(BUNDLE) install && $(BUNDLE) exec jekyll serve --livereload
 
-ci: ci-fmt ci-vet ci-cyclo ci-lint test ci-coverage e2e
+ci: ci-fmt ci-vet ci-cyclo ci-lint ci-test e2e
 
-ci-coverage:
-	@echo "==> Enforcing 100% test coverage..."
-	@go test $$(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.out > /dev/null 2>&1
+ci-test:
+	@echo "==> Running unit tests with coverage..."
+	@go test $$(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.out
 	@total=$$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $$NF}'); \
 	if [ "$$total" != "100.0%" ]; then \
 		echo "FAIL: total coverage is $$total, expected 100.0%"; \

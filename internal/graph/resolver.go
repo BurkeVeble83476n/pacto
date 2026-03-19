@@ -177,6 +177,16 @@ func (r *resolver) resolveEdge(ctx context.Context, dep contract.Dependency, pat
 		edge.Error = err.Error()
 		return edge
 	}
+	if bundle == nil || bundle.Contract == nil {
+		errMsg := fmt.Sprintf("fetcher returned nil bundle for %s", dep.Ref)
+		r.mu.Lock()
+		r.errors[dep.Ref] = errMsg
+		delete(r.pending, dep.Ref)
+		r.mu.Unlock()
+		close(ch)
+		edge.Error = errMsg
+		return edge
+	}
 
 	node := &Node{
 		Name:     bundle.Contract.Service.Name,

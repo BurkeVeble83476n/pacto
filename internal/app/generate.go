@@ -87,6 +87,9 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOptions) (*Generate
 		if rel, relErr := filepath.Rel(absOutput, outPath); relErr != nil || strings.HasPrefix(rel, "..") {
 			return nil, fmt.Errorf("plugin file path %q escapes output directory", f.Path)
 		}
+		if strings.Contains(f.Path, "..") {
+			return nil, fmt.Errorf("plugin file path %q contains path traversal", f.Path)
+		}
 		if err := os.MkdirAll(filepath.Dir(outPath), 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory for %s: %w", f.Path, err)
 		}

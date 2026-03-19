@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/trianalab/pacto/pkg/contract"
@@ -208,9 +209,18 @@ func newProxyHandler(allowed []string) http.HandlerFunc {
 			return
 		}
 
+		parsed, parseErr := url.Parse(targetURL)
+		if parseErr != nil || parsed.Host == "" {
+			http.Error(w, "invalid target URL", http.StatusBadRequest)
+			return
+		}
 		ok := false
 		for _, t := range allowed {
-			if strings.HasPrefix(targetURL, t) {
+			allowedParsed, err := url.Parse(t)
+			if err != nil {
+				continue
+			}
+			if parsed.Scheme == allowedParsed.Scheme && parsed.Host == allowedParsed.Host && strings.HasPrefix(parsed.Path, allowedParsed.Path) {
 				ok = true
 				break
 			}

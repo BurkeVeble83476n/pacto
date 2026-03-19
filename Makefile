@@ -38,7 +38,18 @@ BUNDLE := $(shell command -v /opt/homebrew/opt/ruby@3.3/bin/bundle 2>/dev/null |
 docs:
 	cd docs && $(BUNDLE) install && $(BUNDLE) exec jekyll serve --livereload
 
-ci: ci-fmt ci-vet ci-cyclo ci-lint test e2e
+ci: ci-fmt ci-vet ci-cyclo ci-lint test ci-coverage e2e
+
+ci-coverage:
+	@echo "==> Enforcing 100% test coverage..."
+	@go test $$(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.out > /dev/null 2>&1
+	@total=$$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $$NF}'); \
+	if [ "$$total" != "100.0%" ]; then \
+		echo "FAIL: total coverage is $$total, expected 100.0%"; \
+		go tool cover -func=coverage.out | grep -v '100.0%'; \
+		exit 1; \
+	fi
+	@echo "    total coverage: 100.0%"
 
 ci-fmt:
 	@echo "==> Checking formatting..."

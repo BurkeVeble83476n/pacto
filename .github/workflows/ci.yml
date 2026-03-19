@@ -45,6 +45,16 @@ jobs:
       - name: Run tests with coverage
         run: go test $(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.txt
 
+      - name: Enforce 100% test coverage
+        run: |
+          total=$(go tool cover -func=coverage.txt | grep '^total:' | awk '{print $NF}')
+          if [ "$total" != "100.0%" ]; then
+            echo "FAIL: total coverage is $total, expected 100.0%"
+            go tool cover -func=coverage.txt | grep -v '100.0%'
+            exit 1
+          fi
+          echo "total coverage: 100.0%"
+
       - name: Upload results to Codecov
         uses: codecov/codecov-action@v5.5.2
         with:

@@ -48,6 +48,18 @@ runs:
       run: go test ./...
       shell: bash
 
+    - name: Enforce 100% test coverage
+      run: |
+        go test $(go list ./... | grep -v /tests/ | grep -v /testutil | grep -v /cmd/gendocs) -coverprofile=coverage.out
+        total=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $NF}')
+        if [ "$total" != "100.0%" ]; then
+          echo "FAIL: total coverage is $total, expected 100.0%"
+          go tool cover -func=coverage.out | grep -v '100.0%'
+          exit 1
+        fi
+        echo "total coverage: 100.0%"
+      shell: bash
+
     - name: Run e2e tests
       run: go test -tags e2e ./tests/e2e/ -count=1 -timeout 120s
       shell: bash

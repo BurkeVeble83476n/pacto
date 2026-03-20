@@ -317,6 +317,23 @@
               "description": "The number of seconds to wait after the container starts before sending the first health check probe."
             }
           }
+        },
+
+        "metrics": {
+          "type": "object",
+          "description": "Configures where the platform scrapes metrics from the service (e.g. Prometheus endpoint).",
+          "required": ["interface"],
+          "additionalProperties": false,
+          "properties": {
+            "interface": {
+              "type": "string",
+              "description": "The name of the interface that serves the metrics endpoint."
+            },
+            "path": {
+              "type": "string",
+              "description": "The HTTP path for the metrics endpoint (e.g. /metrics)."
+            }
+          }
         }
       }
     },

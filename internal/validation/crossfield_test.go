@@ -320,6 +320,83 @@ func TestValidateHealthInterface_HTTPWithoutPath(t *testing.T) {
 	}
 }
 
+func TestValidateMetricsInterface_NotFound(t *testing.T) {
+	c := validContract()
+	c.Runtime.Metrics = &contract.Metrics{Interface: "nonexistent", Path: "/metrics"}
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for metrics interface not found")
+	}
+}
+
+func TestValidateMetricsInterface_EventInterface(t *testing.T) {
+	c := validContract()
+	c.Interfaces = []contract.Interface{
+		{Name: "events", Type: "event", Contract: "events.proto"},
+	}
+	c.Runtime.Metrics = &contract.Metrics{Interface: "events", Path: "/metrics"}
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for event metrics interface")
+	}
+}
+
+func TestValidateMetricsInterface_HTTPWithoutPath(t *testing.T) {
+	c := validContract()
+	c.Runtime.Metrics = &contract.Metrics{Interface: "api", Path: ""}
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for HTTP metrics interface without path")
+	}
+}
+
+func TestValidateMetricsInterface_GRPCWithPath(t *testing.T) {
+	c := validContract()
+	grpcPort := 9090
+	c.Interfaces = []contract.Interface{
+		{Name: "grpc", Type: "grpc", Port: &grpcPort, Contract: "service.proto"},
+	}
+	c.Runtime.Metrics = &contract.Metrics{Interface: "grpc", Path: "/metrics"}
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if len(result.Warnings) == 0 {
+		t.Error("expected METRICS_PATH_IGNORED warning for gRPC interface with path")
+	}
+}
+
+func TestValidateMetricsInterface_Valid(t *testing.T) {
+	c := validContract()
+	c.Runtime.Metrics = &contract.Metrics{Interface: "api", Path: "/metrics"}
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid metrics interface, got %v", result.Errors)
+	}
+}
+
+func TestValidateMetricsInterface_NilRuntime(t *testing.T) {
+	c := validContract()
+	c.Runtime = nil
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil runtime")
+	}
+}
+
+func TestValidateMetricsInterface_NilMetrics(t *testing.T) {
+	c := validContract()
+	c.Runtime.Metrics = nil
+	var result ValidationResult
+	validateMetricsInterface(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil metrics")
+	}
+}
+
 func TestValidateImageRef_InvalidRef(t *testing.T) {
 	c := validContract()
 	c.Service.Image = &contract.Image{Ref: "invalid"}

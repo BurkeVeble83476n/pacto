@@ -53,6 +53,10 @@ runtime:
     interface: metrics
     path: /health
 
+  metrics:
+    interface: metrics
+    path: /metrics
+
 scaling:
   replicas: 1
 

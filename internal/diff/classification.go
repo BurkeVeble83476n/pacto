@@ -61,6 +61,10 @@ var rules = map[classificationKey]Classification{
 	{"runtime.health.path", Modified}:                PotentialBreaking,
 	{"runtime.health.initialDelaySeconds", Modified}: NonBreaking,
 
+	// Runtime — metrics
+	{"runtime.metrics.interface", Modified}: PotentialBreaking,
+	{"runtime.metrics.path", Modified}:      PotentialBreaking,
+
 	// Scaling
 	{"scaling.min", Modified}: PotentialBreaking,
 	{"scaling.max", Modified}: NonBreaking,

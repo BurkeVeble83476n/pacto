@@ -285,6 +285,59 @@ func TestDiffRuntime_HealthInitialDelayChanged(t *testing.T) {
 	}
 }
 
+func TestDiffMetrics_BothNil(t *testing.T) {
+	changes := diffMetrics(nil, nil)
+	if len(changes) != 0 {
+		t.Errorf("expected 0 changes, got %d", len(changes))
+	}
+}
+
+func TestDiffMetrics_InterfaceChanged(t *testing.T) {
+	old := &contract.Metrics{Interface: "api", Path: "/metrics"}
+	new := &contract.Metrics{Interface: "metrics", Path: "/metrics"}
+	changes := diffMetrics(old, new)
+	found := false
+	for _, c := range changes {
+		if c.Path == "runtime.metrics.interface" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected runtime.metrics.interface change")
+	}
+}
+
+func TestDiffMetrics_PathChanged(t *testing.T) {
+	old := &contract.Metrics{Interface: "api", Path: "/metrics"}
+	new := &contract.Metrics{Interface: "api", Path: "/prometheus"}
+	changes := diffMetrics(old, new)
+	found := false
+	for _, c := range changes {
+		if c.Path == "runtime.metrics.path" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected runtime.metrics.path change")
+	}
+}
+
+func TestDiffMetrics_Added(t *testing.T) {
+	new := &contract.Metrics{Interface: "api", Path: "/metrics"}
+	changes := diffMetrics(nil, new)
+	if len(changes) != 2 {
+		t.Errorf("expected 2 changes (interface + path), got %d", len(changes))
+	}
+}
+
+func TestDiffMetrics_Removed(t *testing.T) {
+	old := &contract.Metrics{Interface: "api", Path: "/metrics"}
+	changes := diffMetrics(old, nil)
+	if len(changes) != 2 {
+		t.Errorf("expected 2 changes (interface + path), got %d", len(changes))
+	}
+}
+
 func TestDiffRuntime_BothNilRuntime(t *testing.T) {
 	old := &contract.Contract{Service: contract.ServiceIdentity{Name: "a", Version: "1.0.0"}}
 	new := &contract.Contract{Service: contract.ServiceIdentity{Name: "a", Version: "1.0.0"}}

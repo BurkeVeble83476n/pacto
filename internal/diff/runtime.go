@@ -47,6 +47,9 @@ func diffRuntime(old, new *contract.Contract) []Change {
 	// Health
 	changes = append(changes, diffHealth(oldRT.Health, newRT.Health)...)
 
+	// Metrics
+	changes = append(changes, diffMetrics(oldRT.Metrics, newRT.Metrics)...)
+
 	return changes
 }
 
@@ -69,6 +72,25 @@ func diffHealth(old, new *contract.Health) []Change {
 	}
 	if intPtrChanged(oldDelay, newDelay) {
 		changes = append(changes, newChange("runtime.health.initialDelaySeconds", Modified, intPtrVal(oldDelay), intPtrVal(newDelay)))
+	}
+	return changes
+}
+
+func diffMetrics(old, new *contract.Metrics) []Change {
+	var changes []Change
+	oldIface, newIface := "", ""
+	oldPath, newPath := "", ""
+	if old != nil {
+		oldIface, oldPath = old.Interface, old.Path
+	}
+	if new != nil {
+		newIface, newPath = new.Interface, new.Path
+	}
+	if oldIface != newIface {
+		changes = append(changes, newChange("runtime.metrics.interface", Modified, oldIface, newIface))
+	}
+	if oldPath != newPath {
+		changes = append(changes, newChange("runtime.metrics.path", Modified, oldPath, newPath))
 	}
 	return changes
 }

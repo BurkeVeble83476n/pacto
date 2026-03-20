@@ -34,6 +34,9 @@ These contracts represent the **operational interface** of each service — not 
 | [RabbitMQ]({{ site.baseurl }}{% link examples/rabbitmq.md %}) | service | stateful/persistent | Message broker |
 | [NGINX]({{ site.baseurl }}{% link examples/nginx.md %}) | service | stateless/ephemeral | Reverse proxy / web server |
 | [Cron Worker]({{ site.baseurl }}{% link examples/cron-worker.md %}) | scheduled | stateless/ephemeral | Scheduled batch job |
+| [Event Processor]({{ site.baseurl }}{% link examples/event-processor.md %}) | service | stateless/ephemeral | Event-driven message consumer |
+| [gRPC Service]({{ site.baseurl }}{% link examples/grpc-service.md %}) | service | stateless/ephemeral | gRPC microservice with Proto contract |
+| [Hybrid Cache API]({{ site.baseurl }}{% link examples/hybrid-cache.md %}) | service | hybrid/persistent | API with local cache and upstream rebuild |
 
 ---
 

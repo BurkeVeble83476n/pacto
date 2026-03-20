@@ -147,26 +147,11 @@ func setNestedValue(m map[string]interface{}, keyPath string, value interface{})
 	return nil
 }
 
-// splitKeyPath splits a dot-separated key path, respecting bracket notation.
+// splitKeyPath splits a dot-separated key path.
 // "service.chart.ref" → ["service", "chart", "ref"]
 // "interfaces[0].port" → ["interfaces[0]", "port"]
 func splitKeyPath(path string) []string {
-	var parts []string
-	var current strings.Builder
-	for i := 0; i < len(path); i++ {
-		if path[i] == '.' {
-			if current.Len() > 0 {
-				parts = append(parts, current.String())
-				current.Reset()
-			}
-		} else {
-			current.WriteByte(path[i])
-		}
-	}
-	if current.Len() > 0 {
-		parts = append(parts, current.String())
-	}
-	return parts
+	return strings.Split(path, ".")
 }
 
 // parseArrayIndex checks if a path part has array notation (e.g. "interfaces[0]").

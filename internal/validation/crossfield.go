@@ -271,13 +271,9 @@ func validateChartRef(c *contract.Contract, result *ValidationResult) {
 			)
 		}
 	}
-	if c.Service.Chart.Version == "" {
-		result.AddError(
-			"service.chart.version",
-			"EMPTY_CHART_VERSION",
-			"chart version must not be empty",
-		)
-	} else if _, err := semver.NewVersion(c.Service.Chart.Version); err != nil {
+	// Version presence and minLength are enforced by JSON Schema (structural validation).
+	// Here we validate semver format, which JSON Schema cannot express.
+	if _, err := semver.NewVersion(c.Service.Chart.Version); err != nil {
 		result.AddError(
 			"service.chart.version",
 			"INVALID_CHART_VERSION",

@@ -109,6 +109,9 @@ service:
   image:
     ref: ghcr.io/acme/payments-api:2.1.0
     private: true
+  chart:
+    ref: oci://ghcr.io/acme/payments-chart
+    version: 2.1.0
 
 interfaces:
   - name: rest-api
@@ -208,6 +211,7 @@ Identifies the service.
 | `version` | string | Yes | Valid semver (e.g., `2.1.0`) |
 | `owner` | string | No | |
 | `image` | [Image](#image) | No | |
+| `chart` | [Chart](#chart) | No | |
 
 #### Image
 
@@ -215,6 +219,18 @@ Identifies the service.
 |-------|------|----------|-------------|
 | `ref` | string | Yes | Non-empty. Valid OCI image reference |
 | `private` | boolean | No | |
+
+#### Chart
+
+Optional Helm chart reference for deploying the service.
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `ref` | string | Yes | Non-empty. Local path (e.g. `./charts/my-chart`) or OCI reference (e.g. `oci://ghcr.io/org/chart`) |
+| `version` | string | Yes | Non-empty. Valid semver |
+
+{: .warning }
+Local chart references are only allowed during development. `pacto push` rejects contracts with local chart references — use an OCI reference before publishing.
 
 ---
 
@@ -250,8 +266,11 @@ Defines the service's configuration model.
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
 | `schema` | string | Yes | Non-empty. Must reference a file in the bundle |
+| `values` | object | No | Must conform to the schema defined in `schema` |
 
 Required configuration keys are derived from the JSON Schema's `required` array.
+
+The optional `values` field provides default configuration values that are validated against the referenced JSON Schema. This is useful for documenting expected defaults or providing environment-specific overrides via the `--set` and `--values` flags (see [Contract overrides](#contract-overrides)).
 
 ---
 
@@ -482,6 +501,10 @@ Validates semantic references and consistency:
 | Compatibility range is empty | `EMPTY_COMPATIBILITY` |
 | OCI dependency uses tag instead of digest | `TAG_NOT_DIGEST` (warning) |
 | `image.ref` is a valid OCI reference | `INVALID_IMAGE_REF` |
+| `chart.ref` (OCI) is a valid OCI reference | `INVALID_CHART_REF` |
+| `chart.version` is valid semver | `INVALID_CHART_VERSION` |
+| `configuration.values` without a `configuration.schema` | `VALUES_WITHOUT_SCHEMA` |
+| `configuration.values` don't match the schema | `CONFIG_VALUES_VALIDATION_FAILED` |
 | `scaling.min` <= `scaling.max` | `SCALING_MIN_EXCEEDS_MAX` |
 | Job workloads cannot have scaling | `JOB_SCALING_NOT_ALLOWED` |
 | Stateless + persistent is invalid | `STATELESS_PERSISTENT_CONFLICT` |
@@ -493,6 +516,100 @@ Validates cross-concern consistency:
 | Rule | Code | Type |
 |---|---|---|
 | `ordered` upgrade strategy with `stateless` state | `UPGRADE_STRATEGY_STATE_MISMATCH` | Warning |
+
+---
+
+## Contract overrides
+
+Pacto supports a Helm-style override system that lets you modify contract values without editing `pacto.yaml` directly. Overrides are available on all commands that take a contract reference (`validate`, `explain`, `diff`, `doc`, `generate`, `graph`, `pack`, `push`).
+
+### Override flags
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--values <file>` | `-f` | Merge a YAML values file into the contract |
+| `--set <key=value>` | | Set an individual value using dot-notation |
+
+{: .note }
+The `-f` shorthand is not available on `pacto push` because `-f` is already used for `--force`.
+
+### Precedence
+
+Overrides follow the same precedence logic as Helm (lowest to highest):
+
+1. Base `pacto.yaml`
+2. Values files (`-f`), in the order they are specified
+3. `--set` values
+
+Later sources override earlier ones. Multiple `-f` flags are applied in order — the last file wins for any conflicting key.
+
+### Examples
+
+```bash
+# Override the service version
+pacto validate my-service --set service.version=2.0.0
+
+# Use a values file for environment-specific overrides
+pacto validate my-service -f staging-values.yaml
+
+# Combine both (--set takes precedence over -f)
+pacto validate my-service -f staging-values.yaml --set service.version=3.0.0
+
+# Set configuration values validated against the config schema
+pacto validate my-service --set configuration.values.DB_HOST=localhost
+
+# Set array elements using bracket notation
+pacto validate my-service --set interfaces[0].port=9090
+```
+
+### Diff overrides
+
+The `diff` command takes two contract references. To override each independently, use prefixed flags:
+
+| Flag | Description |
+|------|-------------|
+| `--old-values <file>` | Values file for the old (first) contract |
+| `--old-set <key=value>` | Set value for the old contract |
+| `--new-values <file>` | Values file for the new (second) contract |
+| `--new-set <key=value>` | Set value for the new contract |
+
+```bash
+# Override only the new contract
+pacto diff oci://ghcr.io/acme/svc-pacto:1.0.0 my-service --new-set service.version=2.0.0
+
+# Override both contracts
+pacto diff old-service new-service \
+  --old-values old-env.yaml \
+  --new-values new-env.yaml \
+  --new-set service.version=3.0.0
+```
+
+### Type inference
+
+`--set` values are automatically parsed into their most specific type:
+
+| Input | Parsed as |
+|-------|-----------|
+| `42` | integer |
+| `3.14` | float |
+| `true` / `false` | boolean |
+| `hello` | string |
+| `1.0.0` | string (not a float — contains multiple dots) |
+
+### Configuration values validation
+
+Overrides can set `configuration.values` fields. These values are validated against the JSON Schema referenced by `configuration.schema`. If a value has the wrong type or is not defined in the schema, validation fails.
+
+```yaml
+# pacto.yaml
+configuration:
+  schema: configuration/schema.json
+```
+
+```bash
+# This will fail if DB_PORT expects an integer but receives a string
+pacto validate my-service --set configuration.values.DB_PORT=not-a-number
+```
 
 ---
 
@@ -514,6 +631,7 @@ Each change is classified as:
 | `service.version` | Modified | NON_BREAKING |
 | `service.owner` | Added / Modified / Removed | NON_BREAKING |
 | `service.image` | Added / Modified / Removed | NON_BREAKING |
+| `service.chart` | Added / Modified / Removed | NON_BREAKING |
 
 ### Interfaces
 

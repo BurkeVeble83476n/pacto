@@ -455,6 +455,19 @@ func TestValidateConfigValues_ValuesWithoutSchema(t *testing.T) {
 	}
 }
 
+func TestValidateConfigValues_NilBundleFS(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "config-schema.json",
+		Values: map[string]interface{}{"key": "val"},
+	}
+	var result ValidationResult
+	validateConfigValues(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error when bundleFS is nil")
+	}
+}
+
 func TestValidateConfigValues_Valid(t *testing.T) {
 	c := validContract()
 	c.Configuration = &contract.Configuration{

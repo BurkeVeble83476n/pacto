@@ -230,7 +230,11 @@ func newProxyHandler(allowed []string) http.HandlerFunc {
 			return
 		}
 
-		proxyReq, _ := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+		proxyReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL, r.Body)
+		if err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		copyHeaders(proxyReq.Header, r.Header)
 
 		resp, err := http.DefaultClient.Do(proxyReq)

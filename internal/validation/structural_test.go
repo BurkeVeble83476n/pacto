@@ -86,6 +86,45 @@ func TestYamlToGeneric_UnmarshalError(t *testing.T) {
 	}
 }
 
+func TestValidateStructuralRaw_Valid(t *testing.T) {
+	yaml := []byte("pactoVersion: \"1.0\"\nservice:\n  name: test-svc\n  version: \"1.0.0\"\n")
+	result := ValidateStructuralRaw(yaml)
+	if !result.IsValid() {
+		t.Errorf("expected valid result, got errors: %v", result.Errors)
+	}
+}
+
+func TestValidateStructuralRaw_InvalidEnum(t *testing.T) {
+	// runtime.state.type has an enum constraint; "invalid" should fail.
+	yaml := []byte(`pactoVersion: "1.0"
+service:
+  name: test-svc
+  version: "1.0.0"
+runtime:
+  workload: service
+  state:
+    type: invalid
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+`)
+	result := ValidateStructuralRaw(yaml)
+	if result.IsValid() {
+		t.Error("expected invalid result for bad enum value")
+	}
+}
+
+func TestValidateStructuralRaw_InvalidYAML(t *testing.T) {
+	result := ValidateStructuralRaw([]byte("\t\tinvalid:\n\t -broken"))
+	if result.IsValid() {
+		t.Error("expected invalid result for unparseable YAML")
+	}
+	if result.Errors[0].Code != "YAML_PARSE_ERROR" {
+		t.Errorf("expected YAML_PARSE_ERROR, got %s", result.Errors[0].Code)
+	}
+}
+
 func TestConvertYAMLToJSON_NonStringKey(t *testing.T) {
 	// Simulate a map[interface{}]interface{} with a non-string key,
 	// which can occur in YAML when keys are integers or booleans.

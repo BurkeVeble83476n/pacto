@@ -158,6 +158,8 @@ func (r *resolver) resolveEdge(ctx context.Context, dep contract.Dependency, pat
 			edge.Node = &Node{Name: prev.Name, Version: prev.Version, Ref: prev.Ref, Local: prev.Local}
 		} else if prevErr != "" {
 			edge.Error = prevErr
+		} else {
+			edge.Error = fmt.Sprintf("resolution completed without result for %s", dep.Ref)
 		}
 		return edge
 	}

@@ -25,13 +25,7 @@ func diffInterfaces(old, new *contract.Contract, oldFS, newFS fs.FS) []Change {
 			changes = append(changes, newChange("interfaces.type", Modified, name+": "+oldIface.Type, name+": "+newIface.Type))
 		}
 		if intPtrChanged(oldIface.Port, newIface.Port) {
-			ct := Modified
-			if oldIface.Port == nil {
-				ct = Added
-			} else if newIface.Port == nil {
-				ct = Removed
-			}
-			changes = append(changes, newChange("interfaces.port", ct, intPtrVal(oldIface.Port), intPtrVal(newIface.Port)))
+			changes = append(changes, newChange("interfaces.port", intPtrChangeType(oldIface.Port, newIface.Port), intPtrVal(oldIface.Port), intPtrVal(newIface.Port)))
 		}
 		if oldIface.Visibility != newIface.Visibility {
 			changes = append(changes, newChange("interfaces.visibility", Modified, name+": "+oldIface.Visibility, name+": "+newIface.Visibility))

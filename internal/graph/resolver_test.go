@@ -846,6 +846,36 @@ func TestResolveEdge_PendingWaitGetsSuccess(t *testing.T) {
 	}
 }
 
+func TestResolveEdge_PendingWaitNoResult(t *testing.T) {
+	// Exercise the defensive branch: pending channel closed but neither
+	// visited nor errors populated. Should produce a descriptive error
+	// rather than silently returning an empty edge.
+	r := &resolver{
+		fetcher: &mockFetcher{},
+		visited: map[string]*Node{},
+		errors:  map[string]string{},
+		pending: map[string]chan struct{}{},
+	}
+
+	ref := "oci://registry.io/orphan:1.0.0"
+	ch := make(chan struct{})
+	close(ch)
+	r.pending[ref] = ch
+
+	dep := contract.Dependency{Ref: ref, Required: true, Compatibility: "^1.0.0"}
+	edge := r.resolveEdge(context.Background(), dep, []string{"root"})
+
+	if !edge.Shared {
+		t.Error("expected edge to be marked as shared")
+	}
+	if edge.Node != nil {
+		t.Error("expected nil node")
+	}
+	if edge.Error == "" {
+		t.Error("expected error for orphaned pending wait")
+	}
+}
+
 func TestResolve_NilBundleFromFetcher(t *testing.T) {
 	// Fetcher returns a nil bundle (not an error), exercising the nil-bundle guard.
 	fetcher := &nilBundleFetcher{}

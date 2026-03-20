@@ -14,18 +14,8 @@ import (
 // The rawYAML parameter is the original YAML bytes for JSON Schema validation.
 // The bundleFS parameter provides access to bundle files for cross-field validation.
 func Validate(c *contract.Contract, rawYAML []byte, bundleFS fs.FS) ValidationResult {
-	var result ValidationResult
-
 	// Layer 1: Structural validation via JSON Schema.
-	// Convert YAML to a generic interface{} for JSON Schema validation.
-	structuralData, err := yamlToGeneric(rawYAML)
-	if err != nil {
-		result.AddError("", "YAML_PARSE_ERROR", err.Error())
-		return result
-	}
-
-	structuralResult := ValidateStructural(structuralData)
-	result.Merge(structuralResult)
+	result := ValidateStructuralRaw(rawYAML)
 	if !result.IsValid() {
 		return result
 	}
@@ -42,6 +32,18 @@ func Validate(c *contract.Contract, rawYAML []byte, bundleFS fs.FS) ValidationRe
 	result.Merge(semanticResult)
 
 	return result
+}
+
+// ValidateStructuralRaw performs Layer 1 (JSON Schema) validation on raw YAML bytes.
+// It converts the YAML to a generic interface{} and validates against the schema.
+func ValidateStructuralRaw(rawYAML []byte) ValidationResult {
+	data, err := yamlToGeneric(rawYAML)
+	if err != nil {
+		var result ValidationResult
+		result.AddError("", "YAML_PARSE_ERROR", err.Error())
+		return result
+	}
+	return ValidateStructural(data)
 }
 
 // Function variable for testing.

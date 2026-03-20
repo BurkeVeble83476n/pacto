@@ -129,6 +129,12 @@ func applyOverrides(bundle *contract.Bundle, overrides override.Overrides) (*con
 		return nil, fmt.Errorf("failed to parse contract after overrides: %w", err)
 	}
 
+	// Validate overridden YAML against JSON Schema to catch invalid enum values,
+	// unknown fields, and type mismatches that Go struct unmarshalling silently accepts.
+	if result := validation.ValidateStructuralRaw(merged); !result.IsValid() {
+		return nil, fmt.Errorf("overrides produce an invalid contract: %s", result.Errors[0].Message)
+	}
+
 	return &contract.Bundle{
 		Contract: c,
 		RawYAML:  merged,

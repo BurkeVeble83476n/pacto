@@ -334,9 +334,7 @@ func compileConfigSchema(data []byte) (*jsonschema.Schema, error) {
 	if err := json.Unmarshal(data, &schemaDoc); err != nil {
 		return nil, fmt.Errorf("failed to parse: %v", err)
 	}
-	if err := compiler.AddResource("config-schema.json", schemaDoc); err != nil {
-		return nil, fmt.Errorf("failed to load: %v", err)
-	}
+	compiler.AddResource("config-schema.json", schemaDoc) //nolint:errcheck // AddResource does not fail for valid JSON
 	return compiler.Compile("config-schema.json")
 }
 

@@ -596,6 +596,18 @@ pacto diff old-service new-service \
 | `hello` | string |
 | `1.0.0` | string (not a float — contains multiple dots) |
 
+### Schema validation
+
+All overrides are validated against the Pacto JSON Schema after they are applied. This means invalid enum values, unknown fields, and type mismatches are rejected by every command — not just `validate` and `push`.
+
+```bash
+# Rejected: "invalid" is not a valid enum value for runtime.state.type
+pacto explain my-service --set runtime.state.type=invalid
+
+# Rejected: "unknownField" is not defined in the schema
+pacto doc my-service --set service.unknownField=value
+```
+
 ### Configuration values validation
 
 Overrides can set `configuration.values` fields. These values are validated against the JSON Schema referenced by `configuration.schema`. If a value has the wrong type or is not defined in the schema, validation fails.

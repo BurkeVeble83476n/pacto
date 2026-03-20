@@ -366,14 +366,26 @@ func TestApplyOverrides_InvalidOverride(t *testing.T) {
 }
 
 func TestApplyOverrides_InvalidOverrideResult(t *testing.T) {
-	// Override service to a scalar — this will produce YAML that contract.Parse
-	// can't unmarshal into a struct.
+	// Override service to a scalar — this will produce YAML that fails
+	// structural validation (JSON Schema).
 	bundle := testBundle()
 	_, err := applyOverrides(bundle, override.Overrides{
 		SetValues: []string{"service=not-a-map"},
 	})
 	if err == nil {
 		t.Error("expected error when merged YAML produces invalid contract")
+	}
+}
+
+func TestApplyOverrides_SchemaViolation(t *testing.T) {
+	// Override an enum field to an invalid value — this should fail structural
+	// validation even though Go struct unmarshalling would accept it.
+	bundle := testBundle()
+	_, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"runtime.state.type=invalid-enum"},
+	})
+	if err == nil {
+		t.Error("expected error for invalid enum override")
 	}
 }
 

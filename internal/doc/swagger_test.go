@@ -977,6 +977,20 @@ func TestProxyHandler_InvalidAllowedEntry(t *testing.T) {
 	}
 }
 
+func TestProxyHandler_BadMethod(t *testing.T) {
+	handler := newProxyHandler([]string{"http://example.com"})
+	// An invalid HTTP method causes NewRequestWithContext to fail.
+	req := httptest.NewRequest(http.MethodGet, "/proxy?scalar_url=http://example.com/path", nil)
+	req.Method = "BAD METHOD"
+	rr := httptest.NewRecorder()
+
+	handler.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad method, got %d", rr.Code)
+	}
+}
+
 func TestOverrideServers_InvalidJSON(t *testing.T) {
 	_, err := overrideServers([]byte(`{invalid`), "http://localhost:8080")
 	if err == nil {

@@ -35,14 +35,20 @@ func ValidateCrossField(c *contract.Contract, bundleFS fs.FS) ValidationResult {
 	return result
 }
 
-func validateServiceVersion(c *contract.Contract, result *ValidationResult) {
-	if _, err := semver.NewVersion(c.Service.Version); err != nil {
-		result.AddError(
-			"service.version",
-			"INVALID_SEMVER",
-			fmt.Sprintf("service version %q is not valid semver: %v", c.Service.Version, err),
-		)
+func validateSemver(version, field, code string, result *ValidationResult) {
+	if _, err := semver.NewVersion(version); err != nil {
+		result.AddError(field, code, fmt.Sprintf("%q is not valid semver: %v", version, err))
 	}
+}
+
+func validateOCIRef(ref, field, code string, result *ValidationResult) {
+	if _, err := contract.ParseOCIReference(ref); err != nil {
+		result.AddError(field, code, fmt.Sprintf("invalid OCI reference %q: %v", ref, err))
+	}
+}
+
+func validateServiceVersion(c *contract.Contract, result *ValidationResult) {
+	validateSemver(c.Service.Version, "service.version", "INVALID_SEMVER", result)
 }
 
 func validateInterfaceNamesUnique(c *contract.Contract, result *ValidationResult) {
@@ -185,22 +191,16 @@ func validateDependencyRefs(c *contract.Contract, result *ValidationResult) {
 		parsed := graph.ParseDependencyRef(dep.Ref)
 
 		if parsed.IsOCI() {
+			field := fmt.Sprintf("dependencies[%d].ref", i)
 			ref, err := contract.ParseOCIReference(parsed.Location)
 			if err != nil {
-				result.AddError(
-					fmt.Sprintf("dependencies[%d].ref", i),
-					"INVALID_OCI_REF",
-					fmt.Sprintf("invalid OCI reference %q: %v", dep.Ref, err),
-				)
+				result.AddError(field, "INVALID_OCI_REF", fmt.Sprintf("invalid OCI reference %q: %v", dep.Ref, err))
 				continue
 			}
 
 			if ref.Digest == "" && ref.Tag != "" {
-				result.AddWarning(
-					fmt.Sprintf("dependencies[%d].ref", i),
-					"TAG_NOT_DIGEST",
-					fmt.Sprintf("dependency %q uses a tag instead of a digest; digest pinning is recommended", dep.Ref),
-				)
+				result.AddWarning(field, "TAG_NOT_DIGEST",
+					fmt.Sprintf("dependency %q uses a tag instead of a digest; digest pinning is recommended", dep.Ref))
 			}
 		}
 
@@ -224,13 +224,7 @@ func validateImageRef(c *contract.Contract, result *ValidationResult) {
 	if c.Service.Image == nil {
 		return
 	}
-	if _, err := contract.ParseOCIReference(c.Service.Image.Ref); err != nil {
-		result.AddError(
-			"service.image.ref",
-			"INVALID_IMAGE_REF",
-			fmt.Sprintf("invalid image reference %q: %v", c.Service.Image.Ref, err),
-		)
-	}
+	validateOCIRef(c.Service.Image.Ref, "service.image.ref", "INVALID_IMAGE_REF", result)
 }
 
 func validateScaling(c *contract.Contract, result *ValidationResult) {
@@ -263,23 +257,11 @@ func validateChartRef(c *contract.Contract, result *ValidationResult) {
 	ref := c.Service.Chart.Ref
 	parsed := graph.ParseDependencyRef(ref)
 	if parsed.IsOCI() {
-		if _, err := contract.ParseOCIReference(parsed.Location); err != nil {
-			result.AddError(
-				"service.chart.ref",
-				"INVALID_CHART_REF",
-				fmt.Sprintf("invalid chart OCI reference %q: %v", ref, err),
-			)
-		}
+		validateOCIRef(parsed.Location, "service.chart.ref", "INVALID_CHART_REF", result)
 	}
 	// Version presence and minLength are enforced by JSON Schema (structural validation).
 	// Here we validate semver format, which JSON Schema cannot express.
-	if _, err := semver.NewVersion(c.Service.Chart.Version); err != nil {
-		result.AddError(
-			"service.chart.version",
-			"INVALID_CHART_VERSION",
-			fmt.Sprintf("chart version %q is not valid semver: %v", c.Service.Chart.Version, err),
-		)
-	}
+	validateSemver(c.Service.Chart.Version, "service.chart.version", "INVALID_CHART_VERSION", result)
 }
 
 func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *ValidationResult) {

@@ -98,13 +98,8 @@ func diffLifecycle(old, new *contract.Lifecycle) []Change {
 		changes = append(changes, newChange("runtime.lifecycle.upgradeStrategy", ct, old.UpgradeStrategy, new.UpgradeStrategy))
 	}
 	if intPtrChanged(old.GracefulShutdownSeconds, new.GracefulShutdownSeconds) {
-		ct := Modified
-		if old.GracefulShutdownSeconds == nil {
-			ct = Added
-		} else if new.GracefulShutdownSeconds == nil {
-			ct = Removed
-		}
-		changes = append(changes, newChange("runtime.lifecycle.gracefulShutdownSeconds", ct,
+		changes = append(changes, newChange("runtime.lifecycle.gracefulShutdownSeconds",
+			intPtrChangeType(old.GracefulShutdownSeconds, new.GracefulShutdownSeconds),
 			intPtrVal(old.GracefulShutdownSeconds), intPtrVal(new.GracefulShutdownSeconds)))
 	}
 
@@ -126,4 +121,16 @@ func intPtrVal(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// intPtrChangeType returns the change type for an optional integer pointer
+// transition. The caller must ensure intPtrChanged(old, new) is true.
+func intPtrChangeType(old, new *int) ChangeType {
+	if old == nil {
+		return Added
+	}
+	if new == nil {
+		return Removed
+	}
+	return Modified
 }

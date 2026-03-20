@@ -218,6 +218,114 @@ func TestSetNestedValue_TraverseNonObject(t *testing.T) {
 	}
 }
 
+func TestSetNestedValue_TraverseArrayNotFound(t *testing.T) {
+	m := map[string]interface{}{
+		"key": "not-an-array",
+	}
+	if err := setNestedValue(m, "key[0].nested", "val"); err == nil {
+		t.Error("expected error for array traversal on non-array")
+	}
+}
+
+func TestSetNestedValue_TraverseArrayOutOfBounds(t *testing.T) {
+	m := map[string]interface{}{
+		"items": []interface{}{"a"},
+	}
+	if err := setNestedValue(m, "items[5].nested", "val"); err == nil {
+		t.Error("expected error for out-of-bounds array traversal")
+	}
+}
+
+func TestSetNestedValue_SetKeyInNonObject(t *testing.T) {
+	m := map[string]interface{}{
+		"items": []interface{}{"a", "b"},
+	}
+	if err := setNestedValue(m, "items[0]", "x"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	arr := m["items"].([]interface{})
+	if arr[0] != "x" {
+		t.Errorf("expected items[0]=x, got %v", arr[0])
+	}
+}
+
+func TestSetNestedValue_SetArrayOutOfBounds(t *testing.T) {
+	m := map[string]interface{}{
+		"items": []interface{}{"a"},
+	}
+	if err := setNestedValue(m, "items[5]", "x"); err == nil {
+		t.Error("expected error for out-of-bounds set")
+	}
+}
+
+func TestSetNestedValue_SetArrayNotArray(t *testing.T) {
+	m := map[string]interface{}{
+		"key": "scalar",
+	}
+	if err := setNestedValue(m, "key[0]", "x"); err == nil {
+		t.Error("expected error for array set on non-array")
+	}
+}
+
+func TestSetNestedValue_SingleKey(t *testing.T) {
+	m := map[string]interface{}{}
+	if err := setNestedValue(m, "key", "val"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if m["key"] != "val" {
+		t.Errorf("expected key=val, got %v", m["key"])
+	}
+}
+
+func TestSetNestedValue_TraverseArrayThenSet(t *testing.T) {
+	m := map[string]interface{}{
+		"items": []interface{}{
+			map[string]interface{}{"name": "a"},
+			map[string]interface{}{"name": "b"},
+		},
+	}
+	if err := setNestedValue(m, "items[1].name", "updated"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	arr := m["items"].([]interface{})
+	item := arr[1].(map[string]interface{})
+	if item["name"] != "updated" {
+		t.Errorf("expected items[1].name=updated, got %v", item["name"])
+	}
+}
+
+func TestSetNestedValue_TraverseIntoNonObjectViaArray(t *testing.T) {
+	// Array element is a scalar, not a map — further traversal should fail.
+	m := map[string]interface{}{
+		"items": []interface{}{"scalar"},
+	}
+	// 3 segments: items[0] -> "scalar" (not a map) -> key.sub fails at traversePart
+	if err := setNestedValue(m, "items[0].key.sub", "val"); err == nil {
+		t.Error("expected error traversing into non-object array element")
+	}
+}
+
+func TestApply_SetNestedValueError(t *testing.T) {
+	// Set a nested key on a scalar — triggers setNestedValue error inside Apply.
+	base := []byte("key: scalar\n")
+	_, err := Apply(base, Overrides{SetValues: []string{"key.nested=val"}})
+	if err == nil {
+		t.Error("expected error from setNestedValue in Apply")
+	}
+}
+
+func TestSetNestedValue_CreateIntermediateMaps(t *testing.T) {
+	m := map[string]interface{}{}
+	if err := setNestedValue(m, "a.b.c", "val"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	a := m["a"].(map[string]interface{})
+	b := a["b"].(map[string]interface{})
+	if b["c"] != "val" {
+		t.Errorf("expected a.b.c=val, got %v", b["c"])
+	}
+}
+
 func TestSplitKeyPath(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -273,6 +381,28 @@ func TestDeepMerge(t *testing.T) {
 	}
 	if dst["c"] != "new" {
 		t.Errorf("expected c=new, got %v", dst["c"])
+	}
+}
+
+func TestApply_EmptyBaseYAML(t *testing.T) {
+	// Empty YAML produces nil map — should still work.
+	out, err := Apply([]byte(""), Overrides{SetValues: []string{"a=b"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	m := mustParseYAML(t, out)
+	if m["a"] != "b" {
+		t.Errorf("expected a=b, got %v", m["a"])
+	}
+}
+
+func TestParseArrayIndex_InvalidIndex(t *testing.T) {
+	name, _, isArray := parseArrayIndex("items[abc]")
+	if isArray {
+		t.Error("expected non-array for invalid index")
+	}
+	if name != "items[abc]" {
+		t.Errorf("expected name items[abc], got %s", name)
 	}
 }
 

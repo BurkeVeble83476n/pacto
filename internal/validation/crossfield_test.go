@@ -489,6 +489,59 @@ func TestValidateConfigValues_Valid(t *testing.T) {
 	}
 }
 
+func TestValidateConfigValues_SchemaFileNotFound(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "missing-schema.json",
+		Values: map[string]interface{}{"key": "val"},
+	}
+	bundleFS := fstest.MapFS{}
+	var result ValidationResult
+	validateConfigValues(c, bundleFS, &result)
+	// File-not-found is caught by validateConfigFiles, not here.
+	if !result.IsValid() {
+		t.Error("expected no error for missing schema file (handled elsewhere)")
+	}
+}
+
+func TestValidateConfigValues_InvalidSchemaJSON(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "bad-schema.json",
+		Values: map[string]interface{}{"key": "val"},
+	}
+	bundleFS := fstest.MapFS{
+		"bad-schema.json": &fstest.MapFile{Data: []byte("not valid json")},
+	}
+	var result ValidationResult
+	validateConfigValues(c, bundleFS, &result)
+	if result.IsValid() {
+		t.Error("expected error for invalid schema JSON")
+	}
+}
+
+func TestValidateConfigValues_InvalidSchemaCompile(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "bad-compile.json",
+		Values: map[string]interface{}{"key": "val"},
+	}
+	// Valid JSON but references a non-existent $ref — should fail compilation.
+	bundleFS := fstest.MapFS{
+		"bad-compile.json": &fstest.MapFile{Data: []byte(`{
+			"type": "object",
+			"properties": {
+				"key": {"$ref": "nonexistent://bad-ref"}
+			}
+		}`)},
+	}
+	var result ValidationResult
+	validateConfigValues(c, bundleFS, &result)
+	if result.IsValid() {
+		t.Error("expected error for schema that fails compilation")
+	}
+}
+
 func TestValidateConfigValues_InvalidValue(t *testing.T) {
 	c := validContract()
 	c.Configuration = &contract.Configuration{

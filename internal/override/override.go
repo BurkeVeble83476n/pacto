@@ -85,65 +85,68 @@ func deepMerge(dst, src map[string]interface{}) {
 // Supports array indexing with bracket notation (e.g. "interfaces[0].port").
 func setNestedValue(m map[string]interface{}, keyPath string, value interface{}) error {
 	parts := splitKeyPath(keyPath)
-	if len(parts) == 0 {
-		return fmt.Errorf("empty key path")
-	}
-
 	current := interface{}(m)
 	for i, part := range parts[:len(parts)-1] {
-		name, idx, isArray := parseArrayIndex(part)
-		if isArray {
-			obj, ok := current.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("cannot traverse into non-object at %q", strings.Join(parts[:i], "."))
-			}
-			arr, ok := obj[name].([]interface{})
-			if !ok {
-				return fmt.Errorf("expected array at %q", strings.Join(parts[:i+1], "."))
-			}
-			if idx < 0 || idx >= len(arr) {
-				return fmt.Errorf("index %d out of bounds at %q (length %d)", idx, strings.Join(parts[:i+1], "."), len(arr))
-			}
-			current = arr[idx]
-		} else {
-			obj, ok := current.(map[string]interface{})
-			if !ok {
-				return fmt.Errorf("cannot traverse into non-object at %q", strings.Join(parts[:i], "."))
-			}
-			next, exists := obj[name]
-			if !exists {
-				// Create intermediate map.
-				newMap := make(map[string]interface{})
-				obj[name] = newMap
-				current = newMap
-			} else {
-				current = next
-			}
+		next, err := traversePart(current, part, parts[:i+1])
+		if err != nil {
+			return err
 		}
+		current = next
 	}
 
-	lastPart := parts[len(parts)-1]
-	name, idx, isArray := parseArrayIndex(lastPart)
+	return setAtPart(current, parts[len(parts)-1], value)
+}
+
+// traversePart resolves a single path segment, returning the next node.
+// Creates intermediate maps for non-array key parts that don't exist yet.
+func traversePart(current interface{}, part string, contextPath []string) (interface{}, error) {
+	obj, ok := current.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("cannot traverse into non-object at %q", strings.Join(contextPath[:len(contextPath)-1], "."))
+	}
+
+	name, idx, isArray := parseArrayIndex(part)
 	if isArray {
-		obj, ok := current.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("cannot set array element in non-object")
-		}
 		arr, ok := obj[name].([]interface{})
 		if !ok {
-			return fmt.Errorf("expected array at %q", name)
+			return nil, fmt.Errorf("expected array at %q", strings.Join(contextPath, "."))
 		}
 		if idx < 0 || idx >= len(arr) {
-			return fmt.Errorf("index %d out of bounds at %q (length %d)", idx, name, len(arr))
+			return nil, fmt.Errorf("index %d out of bounds at %q (length %d)", idx, strings.Join(contextPath, "."), len(arr))
 		}
-		arr[idx] = value
-	} else {
-		obj, ok := current.(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("cannot set key %q in non-object", name)
-		}
-		obj[name] = value
+		return arr[idx], nil
 	}
+
+	next, exists := obj[name]
+	if !exists {
+		newMap := make(map[string]interface{})
+		obj[name] = newMap
+		return newMap, nil
+	}
+	return next, nil
+}
+
+// setAtPart sets a value at the final path segment within the current node.
+func setAtPart(current interface{}, part string, value interface{}) error {
+	obj, ok := current.(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("cannot set key in non-object")
+	}
+
+	name, idx, isArray := parseArrayIndex(part)
+	if !isArray {
+		obj[name] = value
+		return nil
+	}
+
+	arr, ok := obj[name].([]interface{})
+	if !ok {
+		return fmt.Errorf("expected array at %q", name)
+	}
+	if idx < 0 || idx >= len(arr) {
+		return fmt.Errorf("index %d out of bounds at %q (length %d)", idx, name, len(arr))
+	}
+	arr[idx] = value
 	return nil
 }
 

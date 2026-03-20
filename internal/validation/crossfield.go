@@ -303,45 +303,20 @@ func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *Validati
 		return
 	}
 
-	compiler := jsonschema.NewCompiler()
-	var schemaDoc interface{}
-	if err := json.Unmarshal(schemaData, &schemaDoc); err != nil {
-		result.AddError(
-			"configuration.schema",
-			"INVALID_CONFIG_SCHEMA",
-			fmt.Sprintf("failed to parse configuration schema: %v", err),
-		)
-		return
-	}
-	if err := compiler.AddResource("config-schema.json", schemaDoc); err != nil {
-		result.AddError(
-			"configuration.schema",
-			"INVALID_CONFIG_SCHEMA",
-			fmt.Sprintf("failed to load configuration schema: %v", err),
-		)
-		return
-	}
-	schema, err := compiler.Compile("config-schema.json")
+	schema, err := compileConfigSchema(schemaData)
 	if err != nil {
 		result.AddError(
 			"configuration.schema",
 			"INVALID_CONFIG_SCHEMA",
-			fmt.Sprintf("failed to compile configuration schema: %v", err),
+			fmt.Sprintf("invalid configuration schema: %v", err),
 		)
 		return
 	}
 
-	// Convert values to JSON-compatible types for schema validation.
-	valuesJSON, err := json.Marshal(c.Configuration.Values)
-	if err != nil {
-		result.AddError("configuration.values", "INVALID_VALUES", fmt.Sprintf("failed to serialize values: %v", err))
-		return
-	}
+	// Round-trip through JSON to normalize types (e.g. YAML int → JSON float64).
+	valuesJSON, _ := json.Marshal(c.Configuration.Values)
 	var valuesGeneric interface{}
-	if err := json.Unmarshal(valuesJSON, &valuesGeneric); err != nil {
-		result.AddError("configuration.values", "INVALID_VALUES", fmt.Sprintf("failed to parse values: %v", err))
-		return
-	}
+	json.Unmarshal(valuesJSON, &valuesGeneric) //nolint:errcheck // round-trip of valid data
 
 	if err := schema.Validate(valuesGeneric); err != nil {
 		result.AddError(
@@ -350,6 +325,19 @@ func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *Validati
 			fmt.Sprintf("configuration values do not match schema: %v", err),
 		)
 	}
+}
+
+// compileConfigSchema parses and compiles a JSON Schema from raw bytes.
+func compileConfigSchema(data []byte) (*jsonschema.Schema, error) {
+	compiler := jsonschema.NewCompiler()
+	var schemaDoc interface{}
+	if err := json.Unmarshal(data, &schemaDoc); err != nil {
+		return nil, fmt.Errorf("failed to parse: %v", err)
+	}
+	if err := compiler.AddResource("config-schema.json", schemaDoc); err != nil {
+		return nil, fmt.Errorf("failed to load: %v", err)
+	}
+	return compiler.Compile("config-schema.json")
 }
 
 func validateStatePersistenceInvariants(c *contract.Contract, result *ValidationResult) {

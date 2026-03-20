@@ -92,7 +92,7 @@ jobs:
         uses: TrianaLab/pacto-actions@v1
 
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | pacto login ghcr.io --username "${{ github.actor }}" --password-stdin
+        run: pacto login ghcr.io --username "${{ github.actor }}" --password "${{ secrets.GITHUB_TOKEN }}"
 
       - name: Push contract
         run: pacto push oci://ghcr.io/${{ github.repository }}-pacto -p .

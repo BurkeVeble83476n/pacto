@@ -162,6 +162,10 @@ runtime:
     path: /health
     initialDelaySeconds: 15
 
+  metrics:
+    interface: rest-api
+    path: /metrics
+
 scaling:
   min: 2
   max: 10
@@ -328,6 +332,7 @@ Describes how the service behaves at runtime. This section is what lets platform
 | `state` | [State](#state) | Yes |
 | `lifecycle` | [Lifecycle](#lifecycle) | No |
 | `health` | [Health](#health) | No |
+| `metrics` | [Metrics](#metrics) | No |
 
 #### `runtime.workload`
 
@@ -417,6 +422,22 @@ Optional. Describes upgrade and shutdown behavior.
 | `path` | string | Conditional | Required when health interface is `http` |
 | `initialDelaySeconds` | integer | No | Minimum: 0 |
 
+#### `runtime.metrics`
+
+Optional. Tells the platform where to scrape metrics from the service (e.g. Prometheus endpoint).
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `interface` | string | Yes | Must reference a declared `http` or `grpc` interface |
+| `path` | string | Conditional | Required when metrics interface is `http` |
+
+```yaml
+runtime:
+  metrics:
+    interface: api
+    path: /metrics
+```
+
 ---
 
 ### `scaling`
@@ -495,6 +516,10 @@ Validates semantic references and consistency:
 | Health interface is not `event` type | `HEALTH_INTERFACE_INVALID` |
 | `health.path` required for `http` health interface | `HEALTH_PATH_REQUIRED` |
 | `health.path` on `grpc` health interface is ignored | `HEALTH_PATH_IGNORED` (warning) |
+| `metrics.interface` matches a declared interface | `METRICS_INTERFACE_NOT_FOUND` |
+| Metrics interface is not `event` type | `METRICS_INTERFACE_INVALID` |
+| `metrics.path` required for `http` metrics interface | `METRICS_PATH_REQUIRED` |
+| `metrics.path` on `grpc` metrics interface is ignored | `METRICS_PATH_IGNORED` (warning) |
 | Referenced files exist in the bundle | `FILE_NOT_FOUND` |
 | OCI dependency refs (`oci://`) are valid OCI references | `INVALID_OCI_REF` |
 | Compatibility ranges are valid semver constraints | `INVALID_COMPATIBILITY` |
@@ -684,6 +709,8 @@ Each change is classified as:
 | `runtime.health.interface` | Modified | POTENTIAL_BREAKING |
 | `runtime.health.path` | Modified | POTENTIAL_BREAKING |
 | `runtime.health.initialDelaySeconds` | Modified | NON_BREAKING |
+| `runtime.metrics.interface` | Modified | POTENTIAL_BREAKING |
+| `runtime.metrics.path` | Modified | POTENTIAL_BREAKING |
 
 ### Scaling
 

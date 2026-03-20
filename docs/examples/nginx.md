@@ -57,6 +57,10 @@ runtime:
     interface: http
     path: /health
 
+  metrics:
+    interface: metrics
+    path: /metrics
+
 scaling:
   min: 2
   max: 20

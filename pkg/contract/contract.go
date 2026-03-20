@@ -75,6 +75,7 @@ type Runtime struct {
 	State     State      `yaml:"state" json:"state"`
 	Lifecycle *Lifecycle `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 	Health    *Health    `yaml:"health,omitempty" json:"health,omitempty"`
+	Metrics   *Metrics   `yaml:"metrics,omitempty" json:"metrics,omitempty"`
 }
 
 // WorkloadType constants.
@@ -141,6 +142,12 @@ type Health struct {
 	Interface           string `yaml:"interface" json:"interface"`
 	Path                string `yaml:"path,omitempty" json:"path,omitempty"`
 	InitialDelaySeconds *int   `yaml:"initialDelaySeconds,omitempty" json:"initialDelaySeconds,omitempty"`
+}
+
+// Metrics describes the metrics endpoint configuration.
+type Metrics struct {
+	Interface string `yaml:"interface" json:"interface"`
+	Path      string `yaml:"path,omitempty" json:"path,omitempty"`
 }
 
 // Scaling describes scaling parameters.

@@ -443,6 +443,9 @@ func buildIfaceLabel(iface contract.Interface, c *contract.Contract) string {
 	if c.Runtime != nil && c.Runtime.Health != nil && iface.Name == c.Runtime.Health.Interface {
 		label += "<br/>♥ health"
 	}
+	if c.Runtime != nil && c.Runtime.Metrics != nil && iface.Name == c.Runtime.Metrics.Interface {
+		label += "<br/>📊 metrics"
+	}
 	return label
 }
 
@@ -521,14 +524,16 @@ func writeInterfacesTable(b *strings.Builder, interfaces []contract.Interface) {
 
 func writeInterfaceDetails(b *strings.Builder, c *contract.Contract, fsys fs.FS, level int, num *sectionNumberer) {
 	var health *contract.Health
+	var metrics *contract.Metrics
 	if c.Runtime != nil {
 		health = c.Runtime.Health
+		metrics = c.Runtime.Metrics
 	}
 	for _, iface := range c.Interfaces {
 		if iface.Type == contract.InterfaceTypeHTTP {
-			writeHTTPInterfaceDetailLevel(b, iface, health, fsys, level, num)
+			writeHTTPInterfaceDetailLevel(b, iface, health, metrics, fsys, level, num)
 		} else {
-			writeNonHTTPInterfaceDetailLevel(b, iface, health, level, num)
+			writeNonHTTPInterfaceDetailLevel(b, iface, health, metrics, level, num)
 		}
 	}
 }
@@ -614,6 +619,16 @@ func healthSuffix(ifaceName string, health *contract.Health) string {
 	return ""
 }
 
+func metricsSuffix(ifaceName string, metrics *contract.Metrics) string {
+	if metrics == nil || metrics.Interface != ifaceName {
+		return ""
+	}
+	if metrics.Path != "" {
+		return fmt.Sprintf(" It serves metrics at `%s`.", metrics.Path)
+	}
+	return " It serves the metrics endpoint."
+}
+
 func writeInterfaceSentence(iface contract.Interface) string {
 	s := fmt.Sprintf("The `%s` interface", iface.Name)
 	if iface.Visibility != "" && iface.Port != nil {
@@ -626,9 +641,9 @@ func writeInterfaceSentence(iface contract.Interface) string {
 	return s
 }
 
-func writeHTTPInterfaceDetailLevel(b *strings.Builder, iface contract.Interface, health *contract.Health, fsys fs.FS, level int, num *sectionNumberer) {
+func writeHTTPInterfaceDetailLevel(b *strings.Builder, iface contract.Interface, health *contract.Health, metrics *contract.Metrics, fsys fs.FS, level int, num *sectionNumberer) {
 	writeHeading(b, level, interfaceHeading(iface), num)
-	fmt.Fprintf(b, "%s.%s\n\n", writeInterfaceSentence(iface), healthSuffix(iface.Name, health))
+	fmt.Fprintf(b, "%s.%s%s\n\n", writeInterfaceSentence(iface), healthSuffix(iface.Name, health), metricsSuffix(iface.Name, metrics))
 
 	if iface.Contract == "" {
 		return
@@ -657,14 +672,14 @@ func writeHTTPInterfaceDetailLevel(b *strings.Builder, iface contract.Interface,
 	fmt.Fprintln(b)
 }
 
-func writeNonHTTPInterfaceDetailLevel(b *strings.Builder, iface contract.Interface, health *contract.Health, level int, num *sectionNumberer) {
+func writeNonHTTPInterfaceDetailLevel(b *strings.Builder, iface contract.Interface, health *contract.Health, metrics *contract.Metrics, level int, num *sectionNumberer) {
 	writeHeading(b, level, interfaceHeading(iface), num)
 
 	desc := writeInterfaceSentence(iface)
 	if iface.Contract != "" {
 		desc += fmt.Sprintf(". Its contract is defined in `%s`", iface.Contract)
 	}
-	fmt.Fprintf(b, "%s.%s\n\n", desc, healthSuffix(iface.Name, health))
+	fmt.Fprintf(b, "%s.%s%s\n\n", desc, healthSuffix(iface.Name, health), metricsSuffix(iface.Name, metrics))
 }
 
 // writeHeading writes a heading at the given level. Levels 1-4 use markdown (#),

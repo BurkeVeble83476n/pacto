@@ -63,6 +63,10 @@ runtime:
     path: /health
     initialDelaySeconds: 5
 
+  metrics:
+    interface: api
+    path: /metrics
+
 scaling:
   min: 1
   max: 3

@@ -22,6 +22,7 @@ func ValidateCrossField(c *contract.Contract, bundleFS fs.FS) ValidationResult {
 	validateInterfacePorts(c, &result)
 	validateInterfaceContracts(c, &result)
 	validateHealthInterface(c, &result)
+	validateMetricsInterface(c, &result)
 	validateInterfaceFiles(c, bundleFS, &result)
 	validateConfigFiles(c, bundleFS, &result)
 	validateDependencyRefs(c, &result)
@@ -148,6 +149,55 @@ func validateHealthInterface(c *contract.Contract, result *ValidationResult) {
 			"runtime.health.path",
 			"HEALTH_PATH_IGNORED",
 			"health check path is not used for grpc interfaces; gRPC uses the standard health protocol",
+		)
+	}
+}
+
+func validateMetricsInterface(c *contract.Contract, result *ValidationResult) {
+	if c.Runtime == nil || c.Runtime.Metrics == nil {
+		return
+	}
+	metricsIface := c.Runtime.Metrics.Interface
+
+	var found *contract.Interface
+	for i := range c.Interfaces {
+		if c.Interfaces[i].Name == metricsIface {
+			found = &c.Interfaces[i]
+			break
+		}
+	}
+
+	if found == nil {
+		result.AddError(
+			"runtime.metrics.interface",
+			"METRICS_INTERFACE_NOT_FOUND",
+			fmt.Sprintf("metrics interface %q does not match any declared interface", metricsIface),
+		)
+		return
+	}
+
+	if found.Type == contract.InterfaceTypeEvent {
+		result.AddError(
+			"runtime.metrics.interface",
+			"METRICS_INTERFACE_INVALID",
+			fmt.Sprintf("metrics interface %q is an event interface; metrics require http or grpc", metricsIface),
+		)
+		return
+	}
+
+	if found.Type == contract.InterfaceTypeHTTP && c.Runtime.Metrics.Path == "" {
+		result.AddError(
+			"runtime.metrics.path",
+			"METRICS_PATH_REQUIRED",
+			"metrics path is required when the metrics interface type is http",
+		)
+	}
+
+	if found.Type == contract.InterfaceTypeGRPC && c.Runtime.Metrics.Path != "" {
+		result.AddWarning(
+			"runtime.metrics.path",
+			"METRICS_PATH_IGNORED",
+			"metrics path is not used for grpc interfaces",
 		)
 	}
 }

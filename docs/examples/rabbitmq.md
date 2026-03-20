@@ -59,6 +59,10 @@ runtime:
     interface: management
     path: /api/health/checks/alarms
 
+  metrics:
+    interface: metrics
+    path: /metrics
+
 scaling:
   min: 3
   max: 5

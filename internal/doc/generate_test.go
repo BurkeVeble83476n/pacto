@@ -77,6 +77,10 @@ func fullContract() *contract.Contract {
 				Path:                "/health",
 				InitialDelaySeconds: intPtr(15),
 			},
+			Metrics: &contract.Metrics{
+				Interface: "rest-api",
+				Path:      "/metrics",
+			},
 		},
 		Scaling: &contract.Scaling{Min: 2, Max: 10},
 		Metadata: map[string]interface{}{
@@ -172,6 +176,8 @@ func TestGenerate_Full(t *testing.T) {
 		{"auth dep name in mermaid", `"auth-service-pacto"`},
 		{"notification dep name in mermaid", `"notification-service-pacto"`},
 		{"health label in mermaid", "<br/>♥ health"},
+		{"metrics label in mermaid", "<br/>📊 metrics"},
+		{"metrics path in interface", "serves metrics at `/metrics`"},
 		{"interfaces section", "## 2. Interfaces"},
 		{"rest-api in interfaces table", "| `rest-api` | `http` | `8080` | `public` |"},
 		{"configuration section", "## 3. Configuration"},
@@ -957,6 +963,22 @@ func TestCollectAllContracts_NilGraph(t *testing.T) {
 	all := collectAllContracts(c, nil)
 	if len(all) != 1 || all[0].Service.Name != "svc" {
 		t.Errorf("expected single contract for nil graph, got %d", len(all))
+	}
+}
+
+func TestMetricsSuffix_WithoutPath(t *testing.T) {
+	m := &contract.Metrics{Interface: "api", Path: ""}
+	result := metricsSuffix("api", m)
+	if result != " It serves the metrics endpoint." {
+		t.Errorf("unexpected result: %q", result)
+	}
+}
+
+func TestMetricsSuffix_DifferentInterface(t *testing.T) {
+	m := &contract.Metrics{Interface: "other", Path: "/metrics"}
+	result := metricsSuffix("api", m)
+	if result != "" {
+		t.Errorf("expected empty string, got: %q", result)
 	}
 }
 

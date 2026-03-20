@@ -317,6 +317,9 @@ func writeRuntime(b *strings.Builder, input generateInput) {
 		fmt.Fprintln(b, "  health:")
 		fmt.Fprintln(b, "    interface: http-api")
 		fmt.Fprintln(b, "    path: /health")
+		fmt.Fprintln(b, "  metrics:")
+		fmt.Fprintln(b, "    interface: http-api")
+		fmt.Fprintln(b, "    path: /metrics")
 	}
 }
 

@@ -8,12 +8,14 @@ import (
 
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/internal/oci"
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
 // GraphOptions holds options for the graph command.
 type GraphOptions struct {
-	Path string
+	Path      string
+	Overrides override.Overrides
 }
 
 // GraphResult is the result of the graph command.
@@ -24,7 +26,7 @@ func (s *Service) Graph(ctx context.Context, opts GraphOptions) (*GraphResult, e
 	ref := defaultPath(opts.Path)
 
 	slog.Debug("resolving contract for graph", "ref", ref)
-	bundle, err := s.resolveBundle(ctx, ref)
+	bundle, err := s.resolveBundleWithOverrides(ctx, ref, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}

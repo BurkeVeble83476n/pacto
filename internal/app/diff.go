@@ -10,14 +10,17 @@ import (
 
 	"github.com/trianalab/pacto/internal/diff"
 	"github.com/trianalab/pacto/internal/graph"
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/internal/sbom"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
 // DiffOptions holds options for the diff command.
 type DiffOptions struct {
-	OldPath string
-	NewPath string
+	OldPath      string
+	NewPath      string
+	OldOverrides override.Overrides
+	NewOverrides override.Overrides
 }
 
 // DependencyDiff holds the diff result for a single dependency.
@@ -42,13 +45,13 @@ type DiffResult struct {
 // Diff compares two contracts and produces a classified change set.
 func (s *Service) Diff(ctx context.Context, opts DiffOptions) (*DiffResult, error) {
 	slog.Debug("resolving old contract", "path", opts.OldPath)
-	oldBundle, err := s.resolveBundle(ctx, opts.OldPath)
+	oldBundle, err := s.resolveBundleWithOverrides(ctx, opts.OldPath, opts.OldOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("old contract: %w", err)
 	}
 
 	slog.Debug("resolving new contract", "path", opts.NewPath)
-	newBundle, err := s.resolveBundle(ctx, opts.NewPath)
+	newBundle, err := s.resolveBundleWithOverrides(ctx, opts.NewPath, opts.NewOverrides)
 	if err != nil {
 		return nil, fmt.Errorf("new contract: %w", err)
 	}

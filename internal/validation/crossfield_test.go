@@ -372,3 +372,127 @@ func TestValidateInterfacePorts_HTTPWithoutPort(t *testing.T) {
 		t.Error("expected PORT_REQUIRED error for HTTP interface without port")
 	}
 }
+
+func TestValidateChartRef_NilChart(t *testing.T) {
+	c := validContract()
+	c.Service.Chart = nil
+	var result ValidationResult
+	validateChartRef(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil chart")
+	}
+}
+
+func TestValidateChartRef_ValidLocal(t *testing.T) {
+	c := validContract()
+	c.Service.Chart = &contract.Chart{Ref: "./charts/my-chart", Version: "1.0.0"}
+	var result ValidationResult
+	validateChartRef(c, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid local chart, got %v", result.Errors)
+	}
+}
+
+func TestValidateChartRef_ValidOCI(t *testing.T) {
+	c := validContract()
+	c.Service.Chart = &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"}
+	var result ValidationResult
+	validateChartRef(c, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid OCI chart, got %v", result.Errors)
+	}
+}
+
+func TestValidateChartRef_InvalidOCIRef(t *testing.T) {
+	c := validContract()
+	c.Service.Chart = &contract.Chart{Ref: "oci://invalid", Version: "1.0.0"}
+	var result ValidationResult
+	validateChartRef(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for invalid OCI chart ref")
+	}
+}
+
+func TestValidateChartRef_InvalidVersion(t *testing.T) {
+	c := validContract()
+	c.Service.Chart = &contract.Chart{Ref: "./charts/my-chart", Version: "not-semver"}
+	var result ValidationResult
+	validateChartRef(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for invalid chart version")
+	}
+}
+
+func TestValidateConfigValues_NoConfig(t *testing.T) {
+	c := validContract()
+	c.Configuration = nil
+	var result ValidationResult
+	validateConfigValues(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil config")
+	}
+}
+
+func TestValidateConfigValues_NoValues(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{Schema: "schema.json"}
+	var result ValidationResult
+	validateConfigValues(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for config without values")
+	}
+}
+
+func TestValidateConfigValues_ValuesWithoutSchema(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Values: map[string]interface{}{"key": "val"},
+	}
+	var result ValidationResult
+	validateConfigValues(c, nil, &result)
+	if result.IsValid() {
+		t.Error("expected error for values without schema")
+	}
+}
+
+func TestValidateConfigValues_Valid(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "config-schema.json",
+		Values: map[string]interface{}{"DB_HOST": "localhost"},
+	}
+	bundleFS := fstest.MapFS{
+		"config-schema.json": &fstest.MapFile{Data: []byte(`{
+			"type": "object",
+			"properties": {
+				"DB_HOST": {"type": "string"}
+			}
+		}`)},
+	}
+	var result ValidationResult
+	validateConfigValues(c, bundleFS, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid config values, got %v", result.Errors)
+	}
+}
+
+func TestValidateConfigValues_InvalidValue(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Schema: "config-schema.json",
+		Values: map[string]interface{}{"DB_PORT": "not-a-number"},
+	}
+	bundleFS := fstest.MapFS{
+		"config-schema.json": &fstest.MapFile{Data: []byte(`{
+			"type": "object",
+			"properties": {
+				"DB_PORT": {"type": "integer"}
+			}
+		}`)},
+	}
+	var result ValidationResult
+	validateConfigValues(c, bundleFS, &result)
+	if result.IsValid() {
+		t.Error("expected error for config value type mismatch")
+	}
+}

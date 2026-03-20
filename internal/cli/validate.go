@@ -32,7 +32,8 @@ func newValidateCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			}
 
 			result, err := svc.Validate(cmd.Context(), app.ValidateOptions{
-				Path: path,
+				Path:      path,
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -50,6 +51,8 @@ func newValidateCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			return nil
 		},
 	}
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

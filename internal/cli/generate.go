@@ -31,6 +31,7 @@ func newGenerateCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 				OutputDir: outputDir,
 				Plugin:    pluginName,
 				Options:   parseOptions(options),
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -43,6 +44,8 @@ func newGenerateCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 
 	cmd.Flags().StringP("output", "o", "", "output directory (default: <plugin>-output/)")
 	cmd.Flags().StringArrayVar(&options, "option", nil, "plugin option as key=value (can be repeated)")
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/internal/plugin"
 )
 
@@ -24,6 +25,7 @@ type GenerateOptions struct {
 	OutputDir string
 	Plugin    string
 	Options   map[string]any
+	Overrides override.Overrides
 }
 
 // GenerateResult holds the result of the generate command.
@@ -43,7 +45,7 @@ func (s *Service) Generate(ctx context.Context, opts GenerateOptions) (*Generate
 	ref := defaultPath(opts.Path)
 
 	slog.Debug("resolving contract for generation", "ref", ref, "plugin", opts.Plugin)
-	bundle, err := s.resolveBundle(ctx, ref)
+	bundle, err := s.resolveBundleWithOverrides(ctx, ref, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}

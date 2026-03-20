@@ -22,8 +22,9 @@ func newPackCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			output, _ := cmd.Flags().GetString("output")
 
 			result, err := svc.Pack(cmd.Context(), app.PackOptions{
-				Path:   path,
-				Output: output,
+				Path:      path,
+				Output:    output,
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -35,6 +36,8 @@ func newPackCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 	}
 
 	cmd.Flags().StringP("output", "o", "", "output file path (default: <name>-<version>.tar.gz)")
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

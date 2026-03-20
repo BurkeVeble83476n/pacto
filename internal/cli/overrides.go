@@ -1,0 +1,45 @@
+package cli
+
+import (
+	"github.com/spf13/cobra"
+	"github.com/trianalab/pacto/internal/override"
+)
+
+// addOverrideFlags registers --values/-f and --set flags on the given command.
+func addOverrideFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArrayP("values", "f", nil, "values file to merge into the contract (can be repeated; last wins)")
+	cmd.Flags().StringArray("set", nil, "set a contract value (e.g. --set service.version=2.0.0)")
+}
+
+// getOverrides extracts override settings from the command flags.
+func getOverrides(cmd *cobra.Command) override.Overrides {
+	valueFiles, _ := cmd.Flags().GetStringArray("values")
+	setValues, _ := cmd.Flags().GetStringArray("set")
+	return override.Overrides{
+		ValueFiles: valueFiles,
+		SetValues:  setValues,
+	}
+}
+
+// addDiffOverrideFlags registers old/new-specific override flags for the diff command.
+func addDiffOverrideFlags(cmd *cobra.Command) {
+	cmd.Flags().StringArray("old-values", nil, "values file to merge into the old contract (can be repeated)")
+	cmd.Flags().StringArray("old-set", nil, "set a value on the old contract (e.g. --old-set service.version=1.0.0)")
+	cmd.Flags().StringArray("new-values", nil, "values file to merge into the new contract (can be repeated)")
+	cmd.Flags().StringArray("new-set", nil, "set a value on the new contract (e.g. --new-set service.version=2.0.0)")
+}
+
+// getDiffOverrides extracts old and new override settings from the diff command flags.
+func getDiffOverrides(cmd *cobra.Command) (old, new override.Overrides) {
+	oldValues, _ := cmd.Flags().GetStringArray("old-values")
+	oldSet, _ := cmd.Flags().GetStringArray("old-set")
+	newValues, _ := cmd.Flags().GetStringArray("new-values")
+	newSet, _ := cmd.Flags().GetStringArray("new-set")
+	return override.Overrides{
+			ValueFiles: oldValues,
+			SetValues:  oldSet,
+		}, override.Overrides{
+			ValueFiles: newValues,
+			SetValues:  newSet,
+		}
+}

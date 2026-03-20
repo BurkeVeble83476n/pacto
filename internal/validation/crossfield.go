@@ -1,10 +1,12 @@
 package validation
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/pkg/contract"
 )
@@ -24,6 +26,8 @@ func ValidateCrossField(c *contract.Contract, bundleFS fs.FS) ValidationResult {
 	validateConfigFiles(c, bundleFS, &result)
 	validateDependencyRefs(c, &result)
 	validateImageRef(c, &result)
+	validateChartRef(c, &result)
+	validateConfigValues(c, bundleFS, &result)
 	validateScaling(c, &result)
 	validateJobScaling(c, &result)
 	validateStatePersistenceInvariants(c, &result)
@@ -248,6 +252,106 @@ func validateJobScaling(c *contract.Contract, result *ValidationResult) {
 			"scaling",
 			"JOB_SCALING_NOT_ALLOWED",
 			"scaling must not be applied to job workloads",
+		)
+	}
+}
+
+func validateChartRef(c *contract.Contract, result *ValidationResult) {
+	if c.Service.Chart == nil {
+		return
+	}
+	ref := c.Service.Chart.Ref
+	parsed := graph.ParseDependencyRef(ref)
+	if parsed.IsOCI() {
+		if _, err := contract.ParseOCIReference(parsed.Location); err != nil {
+			result.AddError(
+				"service.chart.ref",
+				"INVALID_CHART_REF",
+				fmt.Sprintf("invalid chart OCI reference %q: %v", ref, err),
+			)
+		}
+	}
+	if c.Service.Chart.Version == "" {
+		result.AddError(
+			"service.chart.version",
+			"EMPTY_CHART_VERSION",
+			"chart version must not be empty",
+		)
+	} else if _, err := semver.NewVersion(c.Service.Chart.Version); err != nil {
+		result.AddError(
+			"service.chart.version",
+			"INVALID_CHART_VERSION",
+			fmt.Sprintf("chart version %q is not valid semver: %v", c.Service.Chart.Version, err),
+		)
+	}
+}
+
+func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *ValidationResult) {
+	if c.Configuration == nil || len(c.Configuration.Values) == 0 {
+		return
+	}
+	if c.Configuration.Schema == "" {
+		result.AddError(
+			"configuration.values",
+			"VALUES_WITHOUT_SCHEMA",
+			"configuration values require a configuration schema to validate against",
+		)
+		return
+	}
+	if bundleFS == nil {
+		return
+	}
+	schemaData, err := fs.ReadFile(bundleFS, c.Configuration.Schema)
+	if err != nil {
+		// File-not-found is already caught by validateConfigFiles; skip here.
+		return
+	}
+
+	compiler := jsonschema.NewCompiler()
+	var schemaDoc interface{}
+	if err := json.Unmarshal(schemaData, &schemaDoc); err != nil {
+		result.AddError(
+			"configuration.schema",
+			"INVALID_CONFIG_SCHEMA",
+			fmt.Sprintf("failed to parse configuration schema: %v", err),
+		)
+		return
+	}
+	if err := compiler.AddResource("config-schema.json", schemaDoc); err != nil {
+		result.AddError(
+			"configuration.schema",
+			"INVALID_CONFIG_SCHEMA",
+			fmt.Sprintf("failed to load configuration schema: %v", err),
+		)
+		return
+	}
+	schema, err := compiler.Compile("config-schema.json")
+	if err != nil {
+		result.AddError(
+			"configuration.schema",
+			"INVALID_CONFIG_SCHEMA",
+			fmt.Sprintf("failed to compile configuration schema: %v", err),
+		)
+		return
+	}
+
+	// Convert values to JSON-compatible types for schema validation.
+	valuesJSON, err := json.Marshal(c.Configuration.Values)
+	if err != nil {
+		result.AddError("configuration.values", "INVALID_VALUES", fmt.Sprintf("failed to serialize values: %v", err))
+		return
+	}
+	var valuesGeneric interface{}
+	if err := json.Unmarshal(valuesJSON, &valuesGeneric); err != nil {
+		result.AddError("configuration.values", "INVALID_VALUES", fmt.Sprintf("failed to parse values: %v", err))
+		return
+	}
+
+	if err := schema.Validate(valuesGeneric); err != nil {
+		result.AddError(
+			"configuration.values",
+			"CONFIG_VALUES_VALIDATION_FAILED",
+			fmt.Sprintf("configuration values do not match schema: %v", err),
 		)
 	}
 }

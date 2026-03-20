@@ -242,6 +242,71 @@ func TestDiffStringSet_AddedAndRemoved(t *testing.T) {
 	}
 }
 
+func TestDiffContract_ChartAdded(t *testing.T) {
+	old := minimalContract()
+	old.Service.Chart = nil
+	new := minimalContract()
+	new.Service.Chart = &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"}
+	changes := diffContract(old, new)
+	found := false
+	for _, c := range changes {
+		if c.Path == "service.chart" && c.Type == Added {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected service.chart Added change")
+	}
+}
+
+func TestDiffContract_ChartRemoved(t *testing.T) {
+	old := minimalContract()
+	old.Service.Chart = &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"}
+	new := minimalContract()
+	new.Service.Chart = nil
+	changes := diffContract(old, new)
+	found := false
+	for _, c := range changes {
+		if c.Path == "service.chart" && c.Type == Removed {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected service.chart Removed change")
+	}
+}
+
+func TestDiffContract_ChartModified(t *testing.T) {
+	old := minimalContract()
+	old.Service.Chart = &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"}
+	new := minimalContract()
+	new.Service.Chart = &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "2.0.0"}
+	changes := diffContract(old, new)
+	found := false
+	for _, c := range changes {
+		if c.Path == "service.chart" && c.Type == Modified {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected service.chart Modified change")
+	}
+}
+
+func TestFormatChart_Nil(t *testing.T) {
+	if got := formatChart(nil); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+}
+
+func TestFormatChart_NonNil(t *testing.T) {
+	ch := &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"}
+	expected := "oci://ghcr.io/acme/chart:1.0.0"
+	if got := formatChart(ch); got != expected {
+		t.Errorf("expected %q, got %q", expected, got)
+	}
+}
+
 func TestNewChange(t *testing.T) {
 	c := newChange("service.name", Modified, "old", "new")
 	if c.Path != "service.name" {

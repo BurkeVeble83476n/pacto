@@ -11,6 +11,7 @@ import (
 
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/internal/oci"
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/internal/validation"
 	"github.com/trianalab/pacto/pkg/contract"
 )
@@ -90,12 +91,62 @@ func (s *Service) resolveBundle(ctx context.Context, ref string) (*contract.Bund
 	return loadLocalBundle(parsed.Location)
 }
 
+// resolveBundleWithOverrides loads a bundle and applies overrides to it.
+func (s *Service) resolveBundleWithOverrides(ctx context.Context, ref string, overrides override.Overrides) (*contract.Bundle, error) {
+	bundle, err := s.resolveBundle(ctx, ref)
+	if err != nil {
+		return nil, err
+	}
+	return applyOverrides(bundle, overrides)
+}
+
+// applyOverrides applies value file and --set overrides to a bundle.
+// It re-parses the contract from the merged YAML.
+func applyOverrides(bundle *contract.Bundle, overrides override.Overrides) (*contract.Bundle, error) {
+	if overrides.IsEmpty() {
+		return bundle, nil
+	}
+
+	rawYAML := bundle.RawYAML
+	if rawYAML == nil && bundle.FS != nil {
+		var err error
+		rawYAML, err = fs.ReadFile(bundle.FS, DefaultContractPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read contract for overrides: %w", err)
+		}
+	}
+	if rawYAML == nil {
+		return nil, fmt.Errorf("no raw YAML available to apply overrides")
+	}
+
+	merged, err := override.Apply(rawYAML, overrides)
+	if err != nil {
+		return nil, fmt.Errorf("failed to apply overrides: %w", err)
+	}
+
+	c, err := contract.Parse(bytes.NewReader(merged))
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse contract after overrides: %w", err)
+	}
+
+	return &contract.Bundle{
+		Contract: c,
+		RawYAML:  merged,
+		FS:       bundle.FS,
+	}, nil
+}
+
 // loadAndValidateLocal reads a local contract directory, parses pacto.yaml,
 // validates it, and returns the parsed contract and bundle FS. This is the
 // shared helper for pack and push commands that must validate before proceeding.
-func loadAndValidateLocal(dir string) (*contract.Contract, []byte, fs.FS, error) {
+func loadAndValidateLocal(dir string, overrides override.Overrides) (*contract.Contract, []byte, fs.FS, error) {
 	slog.Debug("loading and validating local bundle", "dir", dir)
 	bundle, err := loadLocalBundle(dir)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	bundle, err = applyOverrides(bundle, overrides)
 	if err != nil {
 		return nil, nil, nil, err
 	}

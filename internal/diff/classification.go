@@ -18,6 +18,9 @@ var rules = map[classificationKey]Classification{
 	{"service.image", Modified}:   NonBreaking,
 	{"service.image", Added}:      NonBreaking,
 	{"service.image", Removed}:    NonBreaking,
+	{"service.chart", Modified}:   NonBreaking,
+	{"service.chart", Added}:      NonBreaking,
+	{"service.chart", Removed}:    NonBreaking,
 
 	// Interfaces
 	{"interfaces", Added}:   NonBreaking,

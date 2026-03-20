@@ -6,13 +6,15 @@ import (
 	"io/fs"
 	"log/slog"
 
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/internal/validation"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
 // ValidateOptions holds options for the validate command.
 type ValidateOptions struct {
-	Path string
+	Path      string
+	Overrides override.Overrides
 }
 
 // ValidateResult holds the result of the validate command.
@@ -28,7 +30,7 @@ func (s *Service) Validate(ctx context.Context, opts ValidateOptions) (*Validate
 	ref := defaultPath(opts.Path)
 
 	slog.Debug("resolving contract for validation", "ref", ref)
-	bundle, err := s.resolveBundle(ctx, ref)
+	bundle, err := s.resolveBundleWithOverrides(ctx, ref, opts.Overrides)
 	if err != nil {
 		return &ValidateResult{
 			Path:  ref,

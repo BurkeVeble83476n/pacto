@@ -15,7 +15,7 @@
 
     "service": {
       "type": "object",
-      "description": "Identifies the service: its name, version, owner, and optional container image.",
+      "description": "Identifies the service: its name, version, owner, optional container image, and optional Helm chart reference.",
       "required": ["name", "version"],
       "additionalProperties": false,
       "properties": {
@@ -47,6 +47,24 @@
             "private": {
               "type": "boolean",
               "description": "Whether the image is stored in a private registry requiring authentication."
+            }
+          }
+        },
+        "chart": {
+          "type": "object",
+          "description": "Helm chart details for deploying the service. Accepts local paths or OCI references (OCI references are only allowed when pushing).",
+          "required": ["ref", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "ref": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A reference to the Helm chart. Can be a local path (e.g. ./charts/my-chart) or an OCI reference (e.g. oci://ghcr.io/org/chart)."
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1,
+              "description": "The version of the Helm chart."
             }
           }
         }
@@ -126,6 +144,10 @@
           "type": "string",
           "minLength": 1,
           "description": "Path to a JSON Schema file describing the service's configuration properties."
+        },
+        "values": {
+          "type": "object",
+          "description": "Configuration values to be validated against the configuration schema."
         }
       }
     },

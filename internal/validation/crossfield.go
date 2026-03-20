@@ -1,10 +1,12 @@
 package validation
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/pkg/contract"
 )
@@ -24,6 +26,8 @@ func ValidateCrossField(c *contract.Contract, bundleFS fs.FS) ValidationResult {
 	validateConfigFiles(c, bundleFS, &result)
 	validateDependencyRefs(c, &result)
 	validateImageRef(c, &result)
+	validateChartRef(c, &result)
+	validateConfigValues(c, bundleFS, &result)
 	validateScaling(c, &result)
 	validateJobScaling(c, &result)
 	validateStatePersistenceInvariants(c, &result)
@@ -250,6 +254,90 @@ func validateJobScaling(c *contract.Contract, result *ValidationResult) {
 			"scaling must not be applied to job workloads",
 		)
 	}
+}
+
+func validateChartRef(c *contract.Contract, result *ValidationResult) {
+	if c.Service.Chart == nil {
+		return
+	}
+	ref := c.Service.Chart.Ref
+	parsed := graph.ParseDependencyRef(ref)
+	if parsed.IsOCI() {
+		if _, err := contract.ParseOCIReference(parsed.Location); err != nil {
+			result.AddError(
+				"service.chart.ref",
+				"INVALID_CHART_REF",
+				fmt.Sprintf("invalid chart OCI reference %q: %v", ref, err),
+			)
+		}
+	}
+	// Version presence and minLength are enforced by JSON Schema (structural validation).
+	// Here we validate semver format, which JSON Schema cannot express.
+	if _, err := semver.NewVersion(c.Service.Chart.Version); err != nil {
+		result.AddError(
+			"service.chart.version",
+			"INVALID_CHART_VERSION",
+			fmt.Sprintf("chart version %q is not valid semver: %v", c.Service.Chart.Version, err),
+		)
+	}
+}
+
+func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *ValidationResult) {
+	if c.Configuration == nil || len(c.Configuration.Values) == 0 {
+		return
+	}
+	if c.Configuration.Schema == "" {
+		result.AddError(
+			"configuration.values",
+			"VALUES_WITHOUT_SCHEMA",
+			"configuration values require a configuration schema to validate against",
+		)
+		return
+	}
+	if bundleFS == nil {
+		return
+	}
+	schemaData, err := fs.ReadFile(bundleFS, c.Configuration.Schema)
+	if err != nil {
+		// File-not-found is already caught by validateConfigFiles; skip here.
+		return
+	}
+
+	schema, err := compileConfigSchema(schemaData)
+	if err != nil {
+		result.AddError(
+			"configuration.schema",
+			"INVALID_CONFIG_SCHEMA",
+			fmt.Sprintf("invalid configuration schema: %v", err),
+		)
+		return
+	}
+
+	// Round-trip through JSON to normalize types (e.g. YAML int → JSON float64).
+	valuesJSON, _ := json.Marshal(c.Configuration.Values)
+	var valuesGeneric interface{}
+	json.Unmarshal(valuesJSON, &valuesGeneric) //nolint:errcheck // round-trip of valid data
+
+	if err := schema.Validate(valuesGeneric); err != nil {
+		result.AddError(
+			"configuration.values",
+			"CONFIG_VALUES_VALIDATION_FAILED",
+			fmt.Sprintf("configuration values do not match schema: %v", err),
+		)
+	}
+}
+
+// compileConfigSchema parses and compiles a JSON Schema from raw bytes.
+func compileConfigSchema(data []byte) (*jsonschema.Schema, error) {
+	compiler := jsonschema.NewCompiler()
+	var schemaDoc interface{}
+	if err := json.Unmarshal(data, &schemaDoc); err != nil {
+		return nil, fmt.Errorf("failed to parse: %v", err)
+	}
+	if err := compiler.AddResource("config-schema.json", schemaDoc); err != nil {
+		return nil, fmt.Errorf("failed to load: %v", err)
+	}
+	return compiler.Compile("config-schema.json")
 }
 
 func validateStatePersistenceInvariants(c *contract.Contract, result *ValidationResult) {

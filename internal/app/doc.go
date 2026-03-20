@@ -9,6 +9,7 @@ import (
 
 	"github.com/trianalab/pacto/internal/doc"
 	"github.com/trianalab/pacto/internal/graph"
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
@@ -20,6 +21,7 @@ var generateDoc = doc.Generate
 type DocOptions struct {
 	Path      string
 	OutputDir string
+	Overrides override.Overrides
 }
 
 // DocResult holds the result of the doc command.
@@ -38,7 +40,7 @@ func (s *Service) Doc(ctx context.Context, opts DocOptions) (*DocResult, error) 
 	ref := defaultPath(opts.Path)
 
 	slog.Debug("resolving contract for doc generation", "ref", ref)
-	bundle, err := s.resolveBundle(ctx, ref)
+	bundle, err := s.resolveBundleWithOverrides(ctx, ref, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}

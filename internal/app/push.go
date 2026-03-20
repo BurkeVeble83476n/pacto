@@ -9,6 +9,7 @@ import (
 
 	"github.com/trianalab/pacto/internal/graph"
 	"github.com/trianalab/pacto/internal/oci"
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
@@ -30,9 +31,10 @@ func hasTagOrDigest(ref string) bool {
 
 // PushOptions holds options for the push command.
 type PushOptions struct {
-	Ref   string
-	Path  string
-	Force bool
+	Ref       string
+	Path      string
+	Force     bool
+	Overrides override.Overrides
 }
 
 // PushResult holds the result of the push command.
@@ -56,12 +58,16 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 
 	path := defaultPath(opts.Path)
 
-	c, _, bundleFS, err := loadAndValidateLocal(path)
+	c, _, bundleFS, err := loadAndValidateLocal(path, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := rejectLocalDeps(c); err != nil {
+		return nil, err
+	}
+
+	if err := rejectLocalChart(c); err != nil {
 		return nil, err
 	}
 
@@ -102,6 +108,18 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 func isNotFound(err error) bool {
 	var notFound *oci.ArtifactNotFoundError
 	return errors.As(err, &notFound)
+}
+
+// rejectLocalChart returns an error if the chart uses a local reference.
+func rejectLocalChart(c *contract.Contract) error {
+	if c.Service.Chart == nil {
+		return nil
+	}
+	parsed := graph.ParseDependencyRef(c.Service.Chart.Ref)
+	if parsed.IsLocal() {
+		return fmt.Errorf("local chart reference detected: %s\nLocal chart references are not allowed when publishing. Use an OCI reference (oci://...)", c.Service.Chart.Ref)
+	}
+	return nil
 }
 
 // rejectLocalDeps returns an error if any dependency uses a local reference.

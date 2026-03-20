@@ -166,7 +166,32 @@ If your service depends on a cloud-managed resource (e.g. a database or message 
 
 Use `pacto graph` to visualize your dependency tree.
 
-### 6. Validate before pushing
+### 6. Reference your Helm chart (optional)
+
+If your service is deployed via a Helm chart, reference it in the contract:
+
+```yaml
+service:
+  name: my-service
+  version: 1.0.0
+  chart:
+    ref: oci://ghcr.io/acme/my-chart
+    version: 1.0.0
+```
+
+During development, you can use a local chart path:
+
+```yaml
+service:
+  chart:
+    ref: ./charts/my-chart
+    version: 1.0.0
+```
+
+{: .warning }
+Local chart references are rejected by `pacto push`. Switch to an OCI reference before publishing.
+
+### 7. Validate before pushing
 
 ```bash
 pacto validate my-service
@@ -178,7 +203,7 @@ Validation catches errors in three layers:
 2. **Cross-field** — interface references match, state invariants hold, files exist
 3. **Semantic** — strategy consistency warnings
 
-### 7. Pack and push
+### 8. Pack and push
 
 ```bash
 pacto pack my-service
@@ -190,6 +215,30 @@ If the artifact already exists in the registry, `pacto push` prints a warning an
 ```bash
 pacto push oci://ghcr.io/your-org/my-service-pacto -p my-service --force
 ```
+
+---
+
+## Using contract overrides
+
+Pacto supports Helm-style overrides to modify contract values without editing `pacto.yaml`. This is useful for environment-specific values, CI pipelines, or quick experimentation.
+
+```bash
+# Override a value inline
+pacto validate my-service --set service.version=2.0.0
+
+# Use a values file
+pacto validate my-service -f staging-values.yaml
+
+# Combine both (--set takes precedence)
+pacto validate my-service -f staging-values.yaml --set service.version=3.0.0
+
+# Set configuration values
+pacto validate my-service --set configuration.values.DB_HOST=localhost
+```
+
+Overrides work on all commands that take a contract reference. For `diff`, use `--old-set`/`--old-values` and `--new-set`/`--new-values` to override each contract independently.
+
+See the [Contract Reference — Contract overrides]({{ site.baseurl }}{% link contract-reference.md %}#contract-overrides) section for full details.
 
 ---
 

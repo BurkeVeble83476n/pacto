@@ -180,6 +180,9 @@ func buildSummaryDetails(c *contract.Contract) []string {
 		}
 		details = append(details, fmt.Sprintf("packaged as `%s` (`%s`)", c.Service.Image.Ref, visibility))
 	}
+	if c.Service.Chart != nil {
+		details = append(details, fmt.Sprintf("deployed via Helm chart `%s` version `%s`", c.Service.Chart.Ref, c.Service.Chart.Version))
+	}
 	if c.Scaling != nil {
 		if c.Scaling.Replicas != nil {
 			details = append(details, fmt.Sprintf("runs `%d` replicas", *c.Scaling.Replicas))

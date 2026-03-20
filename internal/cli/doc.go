@@ -61,6 +61,7 @@ func newDocCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			result, err := svc.Doc(cmd.Context(), app.DocOptions{
 				Path:      path,
 				OutputDir: output,
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -88,6 +89,8 @@ func newDocCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 	cmd.Flags().String("interface", "", "interface name to display (used with --ui)")
 	cmd.Flags().Int("port", 8484, "port for the documentation server (used with --serve or --ui)")
 	cmd.Flags().StringArray("target", nil, "target server URL for try-it-out requests; supports interface=url mapping (used with --ui)")
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

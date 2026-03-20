@@ -217,6 +217,78 @@ runtime:
 	}
 }
 
+func TestRejectLocalChart_NilChart(t *testing.T) {
+	c := &contract.Contract{}
+	if err := rejectLocalChart(c); err != nil {
+		t.Fatalf("unexpected error for nil chart: %v", err)
+	}
+}
+
+func TestRejectLocalChart_LocalRef(t *testing.T) {
+	c := &contract.Contract{
+		Service: contract.ServiceIdentity{
+			Chart: &contract.Chart{Ref: "./charts/my-chart", Version: "1.0.0"},
+		},
+	}
+	err := rejectLocalChart(c)
+	if err == nil {
+		t.Fatal("expected error for local chart ref")
+	}
+	if !strings.Contains(err.Error(), "local chart reference detected") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRejectLocalChart_OCIRef(t *testing.T) {
+	c := &contract.Contract{
+		Service: contract.ServiceIdentity{
+			Chart: &contract.Chart{Ref: "oci://ghcr.io/acme/chart", Version: "1.0.0"},
+		},
+	}
+	if err := rejectLocalChart(c); err != nil {
+		t.Fatalf("unexpected error for OCI chart ref: %v", err)
+	}
+}
+
+func TestPush_RejectsLocalChart(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte(`pactoVersion: "1.0"
+service:
+  name: test-svc
+  version: "1.0.0"
+  chart:
+    ref: "./charts/my-chart"
+    version: "1.0.0"
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+runtime:
+  workload: service
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  health:
+    interface: api
+    path: /health
+`)
+	if err := os.WriteFile(filepath.Join(dir, "pacto.yaml"), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := &mockBundleStore{}
+	svc := NewService(store, nil)
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
+	if err == nil {
+		t.Fatal("expected error for local chart ref")
+	}
+	if !strings.Contains(err.Error(), "local chart reference detected") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
 func TestPush_RejectsLocalRef(t *testing.T) {
 	store := &mockBundleStore{}
 	svc := NewService(store, nil)

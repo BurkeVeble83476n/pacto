@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+
+	"github.com/trianalab/pacto/internal/override"
+	"github.com/trianalab/pacto/pkg/contract"
 )
 
 func TestDefaultPath_Empty(t *testing.T) {
@@ -286,9 +289,97 @@ func TestPrepareBundleDir_OCIExtractError(t *testing.T) {
 	}
 }
 
+func TestApplyOverrides_Empty(t *testing.T) {
+	bundle := testBundle()
+	result, err := applyOverrides(bundle, override.Overrides{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != bundle {
+		t.Error("expected same bundle returned for empty overrides")
+	}
+}
+
+func TestApplyOverrides_WithSet(t *testing.T) {
+	bundle := testBundle()
+	result, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"service.version=9.9.9"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Contract.Service.Version != "9.9.9" {
+		t.Errorf("expected version 9.9.9, got %s", result.Contract.Service.Version)
+	}
+}
+
+func TestApplyOverrides_NilRawYAML_FSReadError(t *testing.T) {
+	bundle := &contract.Bundle{
+		Contract: testBundle().Contract,
+		RawYAML:  nil,
+		FS:       &errFS{},
+	}
+	_, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"service.version=2.0.0"},
+	})
+	if err == nil {
+		t.Error("expected error when FS read fails")
+	}
+}
+
+func TestApplyOverrides_NilRawYAML_WithFS(t *testing.T) {
+	bundle := testBundle()
+	bundle.RawYAML = nil // Force read from FS
+	result, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"service.version=2.0.0"},
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Contract.Service.Version != "2.0.0" {
+		t.Errorf("expected version 2.0.0, got %s", result.Contract.Service.Version)
+	}
+}
+
+func TestApplyOverrides_NilRawYAML_NilFS(t *testing.T) {
+	bundle := &contract.Bundle{
+		Contract: testBundle().Contract,
+		RawYAML:  nil,
+		FS:       nil,
+	}
+	_, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"service.version=2.0.0"},
+	})
+	if err == nil {
+		t.Error("expected error when both RawYAML and FS are nil")
+	}
+}
+
+func TestApplyOverrides_InvalidOverride(t *testing.T) {
+	bundle := testBundle()
+	_, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"no-equals"},
+	})
+	if err == nil {
+		t.Error("expected error for invalid --set format")
+	}
+}
+
+func TestApplyOverrides_InvalidOverrideResult(t *testing.T) {
+	// Override service to a scalar — this will produce YAML that contract.Parse
+	// can't unmarshal into a struct.
+	bundle := testBundle()
+	_, err := applyOverrides(bundle, override.Overrides{
+		SetValues: []string{"service=not-a-map"},
+	})
+	if err == nil {
+		t.Error("expected error when merged YAML produces invalid contract")
+	}
+}
+
 func TestLoadAndValidateLocal_Success(t *testing.T) {
 	dir := writeTestBundle(t)
-	c, rawYAML, bundleFS, err := loadAndValidateLocal(dir)
+	c, rawYAML, bundleFS, err := loadAndValidateLocal(dir, override.Overrides{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -304,7 +395,7 @@ func TestLoadAndValidateLocal_Success(t *testing.T) {
 }
 
 func TestLoadAndValidateLocal_FileNotFound(t *testing.T) {
-	_, _, _, err := loadAndValidateLocal("/nonexistent/dir")
+	_, _, _, err := loadAndValidateLocal("/nonexistent/dir", override.Overrides{})
 	if err == nil {
 		t.Error("expected error for nonexistent directory")
 	}
@@ -318,7 +409,7 @@ func TestLoadAndValidateLocal_UnreadableFile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(pactoPath, 0644) })
 
-	_, _, _, err := loadAndValidateLocal(dir)
+	_, _, _, err := loadAndValidateLocal(dir, override.Overrides{})
 	if err == nil {
 		t.Error("expected error when pacto.yaml is unreadable")
 	}
@@ -326,15 +417,25 @@ func TestLoadAndValidateLocal_UnreadableFile(t *testing.T) {
 
 func TestLoadAndValidateLocal_InvalidContract(t *testing.T) {
 	dir := writeUnparseableBundle(t)
-	_, _, _, err := loadAndValidateLocal(dir)
+	_, _, _, err := loadAndValidateLocal(dir, override.Overrides{})
 	if err == nil {
 		t.Error("expected error for invalid contract")
 	}
 }
 
+func TestLoadAndValidateLocal_OverrideError(t *testing.T) {
+	dir := writeTestBundle(t)
+	_, _, _, err := loadAndValidateLocal(dir, override.Overrides{
+		SetValues: []string{"no-equals"},
+	})
+	if err == nil {
+		t.Error("expected error for invalid override")
+	}
+}
+
 func TestLoadAndValidateLocal_ValidationFails(t *testing.T) {
 	dir := writeInvalidBundle(t)
-	_, _, _, err := loadAndValidateLocal(dir)
+	_, _, _, err := loadAndValidateLocal(dir, override.Overrides{})
 	if err == nil {
 		t.Error("expected error for invalid bundle")
 	}

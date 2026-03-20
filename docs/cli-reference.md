@@ -64,7 +64,11 @@ pacto diff <old> <new> [flags]
 **Flags:**
 
 ```
-  -h, --help   help for diff
+  -h, --help                     help for diff
+      --new-set stringArray      set a value on the new contract (e.g. --new-set service.version=2.0.0)
+      --new-values stringArray   values file to merge into the new contract (can be repeated)
+      --old-set stringArray      set a value on the old contract (e.g. --old-set service.version=1.0.0)
+      --old-values stringArray   values file to merge into the old contract (can be repeated)
 ```
 
 **Exit code:** Non-zero if breaking changes are detected.
@@ -123,8 +127,10 @@ pacto doc [dir | oci://ref] [flags]
   -o, --output string        output directory for generated Markdown file
       --port int             port for the documentation server (used with --serve or --ui) (default 8484)
       --serve                start a local HTTP server to view documentation in the browser
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
       --target stringArray   target server URL for try-it-out requests; supports interface=url mapping (used with --ui)
       --ui string            UI type for interactive API explorer (e.g. swagger)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 `--serve`, `--ui`, and `--output` are mutually exclusive.
@@ -154,7 +160,9 @@ pacto explain [dir | oci://ref] [flags]
 **Flags:**
 
 ```
-  -h, --help   help for explain
+  -h, --help                 help for explain
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 ---
@@ -179,6 +187,8 @@ pacto generate <plugin> [dir | oci://ref] [flags]
   -h, --help                 help for generate
       --option stringArray   plugin option as key=value (can be repeated)
   -o, --output string        output directory (default: <plugin>-output/)
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 ---
@@ -200,7 +210,9 @@ pacto graph [dir | oci://ref] [flags]
 **Flags:**
 
 ```
-  -h, --help   help for graph
+  -h, --help                 help for graph
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 Dependencies resolved from local paths are annotated with `[local]`. Shared dependencies (referenced by multiple parents) are annotated with `(shared)`.
@@ -351,8 +363,10 @@ pacto pack [dir] [flags]
 **Flags:**
 
 ```
-  -h, --help            help for pack
-  -o, --output string   output file path (default: <name>-<version>.tar.gz)
+  -h, --help                 help for pack
+  -o, --output string        output file path (default: <name>-<version>.tar.gz)
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 The contract is validated before packing. If validation fails, no archive is created.
@@ -410,9 +424,11 @@ pacto push <ref> [flags]
 **Flags:**
 
 ```
-  -f, --force         overwrite existing artifact in registry
-  -h, --help          help for push
-  -p, --path string   path to contract directory (default: current directory)
+  -f, --force                overwrite existing artifact in registry
+  -h, --help                 help for push
+  -p, --path string          path to contract directory (default: current directory)
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+      --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 If the artifact already exists in the registry, `pacto push` prints a warning and exits successfully without pushing. Use `--force` to overwrite.
@@ -491,7 +507,9 @@ pacto validate [dir | oci://ref] [flags]
 **Flags:**
 
 ```
-  -h, --help   help for validate
+  -h, --help                 help for validate
+      --set stringArray      set a contract value (e.g. --set service.version=2.0.0)
+  -f, --values stringArray   values file to merge into the contract (can be repeated; last wins)
 ```
 
 **Exit code:** Non-zero if validation fails.

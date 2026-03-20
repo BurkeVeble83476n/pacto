@@ -20,7 +20,8 @@ func newExplainCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			}
 
 			result, err := svc.Explain(cmd.Context(), app.ExplainOptions{
-				Path: path,
+				Path:      path,
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -30,6 +31,8 @@ func newExplainCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			return printExplainResult(cmd, result, format)
 		},
 	}
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

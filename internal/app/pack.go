@@ -6,12 +6,14 @@ import (
 	"log/slog"
 
 	"github.com/trianalab/pacto/internal/oci"
+	"github.com/trianalab/pacto/internal/override"
 )
 
 // PackOptions holds options for the pack command.
 type PackOptions struct {
-	Path   string
-	Output string
+	Path      string
+	Output    string
+	Overrides override.Overrides
 }
 
 // PackResult holds the result of the pack command.
@@ -26,7 +28,7 @@ func (s *Service) Pack(_ context.Context, opts PackOptions) (*PackResult, error)
 	path := defaultPath(opts.Path)
 
 	slog.Debug("loading and validating local contract", "path", path)
-	c, _, bundleFS, err := loadAndValidateLocal(path)
+	c, _, bundleFS, err := loadAndValidateLocal(path, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}

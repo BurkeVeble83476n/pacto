@@ -20,7 +20,8 @@ func newGraphCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			}
 
 			result, err := svc.Graph(cmd.Context(), app.GraphOptions{
-				Path: path,
+				Path:      path,
+				Overrides: getOverrides(cmd),
 			})
 			if err != nil {
 				return err
@@ -30,6 +31,8 @@ func newGraphCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			return printGraphResult(cmd, result, format)
 		},
 	}
+
+	addOverrideFlags(cmd)
 
 	return cmd
 }

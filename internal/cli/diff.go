@@ -20,9 +20,12 @@ func newDiffCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
   pacto diff --output-format markdown oci://ghcr.io/acme/svc-pacto:1.0.0 my-service`,
 		Args: cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			oldOverrides, newOverrides := getDiffOverrides(cmd)
 			result, err := svc.Diff(cmd.Context(), app.DiffOptions{
-				OldPath: args[0],
-				NewPath: args[1],
+				OldPath:      args[0],
+				NewPath:      args[1],
+				OldOverrides: oldOverrides,
+				NewOverrides: newOverrides,
 			})
 			if err != nil {
 				return err
@@ -40,6 +43,8 @@ func newDiffCommand(svc *app.Service, v *viper.Viper) *cobra.Command {
 			return nil
 		},
 	}
+
+	addDiffOverrideFlags(cmd)
 
 	return cmd
 }

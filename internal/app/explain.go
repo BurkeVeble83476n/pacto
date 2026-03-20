@@ -4,12 +4,14 @@ import (
 	"context"
 	"log/slog"
 
+	"github.com/trianalab/pacto/internal/override"
 	"github.com/trianalab/pacto/pkg/contract"
 )
 
 // ExplainOptions holds options for the explain command.
 type ExplainOptions struct {
-	Path string
+	Path      string
+	Overrides override.Overrides
 }
 
 // ExplainResult holds the result of the explain command.
@@ -54,7 +56,7 @@ func (s *Service) Explain(ctx context.Context, opts ExplainOptions) (*ExplainRes
 	ref := defaultPath(opts.Path)
 
 	slog.Debug("resolving contract for explain", "ref", ref)
-	bundle, err := s.resolveBundle(ctx, ref)
+	bundle, err := s.resolveBundleWithOverrides(ctx, ref, opts.Overrides)
 	if err != nil {
 		return nil, err
 	}

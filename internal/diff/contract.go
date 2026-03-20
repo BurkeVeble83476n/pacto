@@ -40,6 +40,19 @@ func diffContract(old, new *contract.Contract) []Change {
 		changes = append(changes, newChange("service.image", ct, oldImg, newImg))
 	}
 
+	// Chart
+	oldChart := formatChart(old.Service.Chart)
+	newChart := formatChart(new.Service.Chart)
+	if oldChart != newChart {
+		ct := Modified
+		if old.Service.Chart == nil {
+			ct = Added
+		} else if new.Service.Chart == nil {
+			ct = Removed
+		}
+		changes = append(changes, newChange("service.chart", ct, oldChart, newChart))
+	}
+
 	// Scaling
 	changes = append(changes, diffScaling(old.Scaling, new.Scaling)...)
 
@@ -99,6 +112,13 @@ func formatImage(img *contract.Image) string {
 		return ""
 	}
 	return img.Ref
+}
+
+func formatChart(ch *contract.Chart) string {
+	if ch == nil {
+		return ""
+	}
+	return fmt.Sprintf("%s:%s", ch.Ref, ch.Version)
 }
 
 // newChange creates a Change with classification looked up from the rules table.

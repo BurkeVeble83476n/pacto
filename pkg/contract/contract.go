@@ -18,12 +18,19 @@ type ServiceIdentity struct {
 	Version string `yaml:"version" json:"version"`
 	Owner   string `yaml:"owner,omitempty" json:"owner,omitempty"`
 	Image   *Image `yaml:"image,omitempty" json:"image,omitempty"`
+	Chart   *Chart `yaml:"chart,omitempty" json:"chart,omitempty"`
 }
 
 // Image describes the container image for the service.
 type Image struct {
 	Ref     string `yaml:"ref" json:"ref"`
 	Private bool   `yaml:"private,omitempty" json:"private,omitempty"`
+}
+
+// Chart describes the Helm chart for the service.
+type Chart struct {
+	Ref     string `yaml:"ref" json:"ref"`
+	Version string `yaml:"version" json:"version"`
 }
 
 // Interface describes a service interface declaration.
@@ -51,7 +58,8 @@ const (
 // Configuration describes the service's configuration model.
 // Required configuration keys are derived exclusively from JSON Schema.
 type Configuration struct {
-	Schema string `yaml:"schema" json:"schema"`
+	Schema string                 `yaml:"schema" json:"schema"`
+	Values map[string]interface{} `yaml:"values,omitempty" json:"values,omitempty"`
 }
 
 // Dependency represents a dependency on another service.

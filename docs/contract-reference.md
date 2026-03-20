@@ -529,6 +529,7 @@ Validates semantic references and consistency:
 | `chart.ref` (OCI) is a valid OCI reference | `INVALID_CHART_REF` |
 | `chart.version` is valid semver | `INVALID_CHART_VERSION` |
 | `configuration.values` without a `configuration.schema` | `VALUES_WITHOUT_SCHEMA` |
+| `configuration.schema` file is not valid JSON Schema | `INVALID_CONFIG_SCHEMA` |
 | `configuration.values` don't match the schema | `CONFIG_VALUES_VALIDATION_FAILED` |
 | `scaling.min` <= `scaling.max` | `SCALING_MIN_EXCEEDS_MAX` |
 | Job workloads cannot have scaling | `JOB_SCALING_NOT_ALLOWED` |
@@ -702,7 +703,7 @@ pacto diff my-service my-service \
 Push a release with production configuration:
 
 ```bash
-pacto push my-service -f values/production.yaml --set service.version=2.1.0
+pacto push my-service --values values/production.yaml --set service.version=2.1.0
 ```
 
 ### Configuration values validation

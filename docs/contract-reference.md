@@ -276,6 +276,38 @@ Required configuration keys are derived from the JSON Schema's `required` array.
 
 The optional `values` field provides default configuration values that are validated against the referenced JSON Schema. This is useful for documenting expected defaults or providing environment-specific overrides via the `--set` and `--values` flags (see [Contract overrides](#contract-overrides)).
 
+{: .tip }
+All files referenced by the contract — including the configuration schema — are packaged into the bundle when you run `pacto push`. The bundle is a self-contained OCI artifact that includes `pacto.yaml`, interface contracts, the configuration schema, and any other files in the contract directory.
+
+#### Secret references
+
+Secrets should never be stored as literal values in a contract. Instead, use a reference convention that the platform resolves at deployment time. The contract declares *what* the service needs; the platform decides *how* to provide it.
+
+```yaml
+configuration:
+  schema: configuration/schema.json
+  values:
+    DB_HOST: prod-db.internal
+    DB_PORT: 5432
+    DB_PASSWORD: secret://vault/payments/db-password
+    API_KEY: secret://vault/payments/stripe-api-key
+```
+
+The `secret://` prefix is a convention — Pacto treats it as an opaque string value. Your platform tooling (Kubernetes operators, Terraform modules, deployment scripts) interprets these references and injects the actual secret at runtime. This keeps sensitive values out of the contract while making the dependency on secrets explicit and auditable.
+
+Your configuration JSON Schema should declare secret fields as strings:
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "DB_PASSWORD": { "type": "string", "description": "Database password (secret reference)" },
+    "API_KEY": { "type": "string", "description": "Stripe API key (secret reference)" }
+  },
+  "required": ["DB_PASSWORD", "API_KEY"]
+}
+```
+
 ---
 
 ### `dependencies`
@@ -368,11 +400,11 @@ The combination of `state.type`, `persistence.scope`, and `persistence.durabilit
 
 | State | Persistence | Platform reasoning |
 |-------|-------------|--------------------|
-| `stateless` + `local/ephemeral` | No persistent storage needed. Horizontally scalable. Use a Deployment with HPA. |
-| `stateful` + `local/persistent` | Needs stable identity and local durable storage. Use a StatefulSet with PVCs. |
-| `stateful` + `shared/persistent` | Needs durable storage shared across instances. Provision network-attached or shared storage. |
-| `hybrid` + `local/ephemeral` | Tolerates instance loss. Can use a Deployment, but consider warm-up time if caches are large. |
-| `hybrid` + `local/persistent` | Wants persistent local state but survives without it. StatefulSet with PVC, but can fall back to emptyDir if needed. |
+| `stateless` | `local/ephemeral` | No persistent storage needed. Horizontally scalable. Use a Deployment with HPA. |
+| `stateful` | `local/persistent` | Needs stable identity and local durable storage. Use a StatefulSet with PVCs. |
+| `stateful` | `shared/persistent` | Needs durable storage shared across instances. Provision network-attached or shared storage. |
+| `hybrid` | `local/ephemeral` | Tolerates instance loss. Can use a Deployment, but consider warm-up time if caches are large. |
+| `hybrid` | `local/persistent` | Wants persistent local state but survives without it. StatefulSet with PVC, but can fall back to emptyDir if needed. |
 
 These aren't Kubernetes prescriptions — they're platform-agnostic signals. Whether you deploy to Kubernetes, Nomad, ECS, or a custom platform, the reasoning is the same.
 
@@ -655,6 +687,7 @@ configuration:
   values:
     DB_HOST: localhost
     DB_PORT: 5432
+    DB_PASSWORD: dev-password
     LOG_LEVEL: debug
 scaling:
   replicas: 1
@@ -666,6 +699,7 @@ configuration:
   values:
     DB_HOST: staging-db.internal
     DB_PORT: 5432
+    DB_PASSWORD: secret://vault/payments-staging/db-password
     LOG_LEVEL: info
 scaling:
   min: 2
@@ -678,6 +712,7 @@ configuration:
   values:
     DB_HOST: prod-db.internal
     DB_PORT: 5432
+    DB_PASSWORD: secret://vault/payments-prod/db-password
     LOG_LEVEL: warn
 scaling:
   min: 3

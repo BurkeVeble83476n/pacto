@@ -633,6 +633,78 @@ pacto explain my-service --set runtime.state.type=invalid
 pacto doc my-service --set service.unknownField=value
 ```
 
+### Environment-specific values files
+
+A common pattern is to maintain per-environment values files that override configuration and scaling for each deployment target. The base `pacto.yaml` defines defaults, and each values file layers environment-specific settings on top.
+
+```
+my-service/
+├── pacto.yaml
+├── values/
+│   ├── dev.yaml
+│   ├── staging.yaml
+│   └── production.yaml
+└── configuration/
+    └── schema.json
+```
+
+```yaml
+# values/dev.yaml
+configuration:
+  values:
+    DB_HOST: localhost
+    DB_PORT: 5432
+    LOG_LEVEL: debug
+scaling:
+  replicas: 1
+```
+
+```yaml
+# values/staging.yaml
+configuration:
+  values:
+    DB_HOST: staging-db.internal
+    DB_PORT: 5432
+    LOG_LEVEL: info
+scaling:
+  min: 2
+  max: 4
+```
+
+```yaml
+# values/production.yaml
+configuration:
+  values:
+    DB_HOST: prod-db.internal
+    DB_PORT: 5432
+    LOG_LEVEL: warn
+scaling:
+  min: 3
+  max: 10
+```
+
+Validate each environment independently:
+
+```bash
+pacto validate my-service -f values/dev.yaml
+pacto validate my-service -f values/staging.yaml
+pacto validate my-service -f values/production.yaml
+```
+
+Compare what changes between environments:
+
+```bash
+pacto diff my-service my-service \
+  --old-values values/staging.yaml \
+  --new-values values/production.yaml
+```
+
+Push a release with production configuration:
+
+```bash
+pacto push my-service -f values/production.yaml --set service.version=2.1.0
+```
+
 ### Configuration values validation
 
 Overrides can set `configuration.values` fields. These values are validated against the JSON Schema referenced by `configuration.schema`. If a value has the wrong type or is not defined in the schema, validation fails.

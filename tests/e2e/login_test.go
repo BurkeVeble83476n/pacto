@@ -7,21 +7,30 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
+
+func setXDGConfigHome(t *testing.T, dir string) {
+	t.Helper()
+	xdgMu.Lock()
+	orig := os.Getenv("XDG_CONFIG_HOME")
+	os.Setenv("XDG_CONFIG_HOME", dir)
+	t.Cleanup(func() {
+		os.Setenv("XDG_CONFIG_HOME", orig)
+		xdgMu.Unlock()
+	})
+}
+
+var xdgMu sync.Mutex
 
 func TestLoginCommand(t *testing.T) {
 	t.Parallel()
 
 	t.Run("pacto config write", func(t *testing.T) {
 		t.Parallel()
-		origHome := os.Getenv("HOME")
-		tmpHome := t.TempDir()
-		os.Setenv("HOME", tmpHome)
-		defer os.Setenv("HOME", origHome)
-		origXDG := os.Getenv("XDG_CONFIG_HOME")
-		os.Setenv("XDG_CONFIG_HOME", "")
-		defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+		tmpDir := t.TempDir()
+		setXDGConfigHome(t, tmpDir)
 
 		output, err := runCommand(t, nil, "login", "registry.example.com", "-u", "testuser", "-p", "testpass")
 		if err != nil {
@@ -30,7 +39,7 @@ func TestLoginCommand(t *testing.T) {
 
 		assertContains(t, output, "Login succeeded for registry.example.com")
 
-		configPath := filepath.Join(tmpHome, ".config", "pacto", "config.json")
+		configPath := filepath.Join(tmpDir, "pacto", "config.json")
 		data, err := os.ReadFile(configPath)
 		if err != nil {
 			t.Fatalf("expected pacto config at %s: %v", configPath, err)
@@ -67,13 +76,8 @@ func TestLoginCommand(t *testing.T) {
 
 	t.Run("config merge", func(t *testing.T) {
 		t.Parallel()
-		origHome := os.Getenv("HOME")
-		tmpHome := t.TempDir()
-		os.Setenv("HOME", tmpHome)
-		defer os.Setenv("HOME", origHome)
-		origXDG := os.Getenv("XDG_CONFIG_HOME")
-		os.Setenv("XDG_CONFIG_HOME", "")
-		defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+		tmpDir := t.TempDir()
+		setXDGConfigHome(t, tmpDir)
 
 		_, err := runCommand(t, nil, "login", "registry1.example.com", "-u", "user1", "-p", "pass1")
 		if err != nil {
@@ -84,7 +88,7 @@ func TestLoginCommand(t *testing.T) {
 			t.Fatalf("login to registry2 failed: %v", err)
 		}
 
-		configPath := filepath.Join(tmpHome, ".config", "pacto", "config.json")
+		configPath := filepath.Join(tmpDir, "pacto", "config.json")
 		data, err := os.ReadFile(configPath)
 		if err != nil {
 			t.Fatal(err)
@@ -112,13 +116,8 @@ func TestLoginCommand(t *testing.T) {
 
 	t.Run("json output", func(t *testing.T) {
 		t.Parallel()
-		origHome := os.Getenv("HOME")
-		tmpHome := t.TempDir()
-		os.Setenv("HOME", tmpHome)
-		defer os.Setenv("HOME", origHome)
-		origXDG := os.Getenv("XDG_CONFIG_HOME")
-		os.Setenv("XDG_CONFIG_HOME", "")
-		defer os.Setenv("XDG_CONFIG_HOME", origXDG)
+		tmpDir := t.TempDir()
+		setXDGConfigHome(t, tmpDir)
 
 		output, err := runCommand(t, nil, "--output-format", "json", "login", "registry.example.com", "-u", "user", "-p", "pass")
 		if err != nil {

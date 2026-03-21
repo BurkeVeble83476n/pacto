@@ -39,7 +39,8 @@ Every question you'd normally have to ask the dev team — or discover in produc
 | `runtime.lifecycle.upgradeStrategy: ordered` | Use ordered pod management |
 | `runtime.lifecycle.gracefulShutdownSeconds` | Set termination grace period |
 | `scaling.min` / `scaling.max` | Configure auto-scaling bounds |
-| `configuration.schema` | Validate required configuration, generate config templates. Platform teams can publish a shared schema that services vendor into their bundles — the schema then expresses what the platform *provides*. See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) |
+| `configuration.schema` / `configuration.ref` | Validate required configuration, generate config templates. Platform teams can publish a shared schema that services vendor into their bundles or reference via OCI — the schema then expresses what the platform *provides*. See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) |
+| `policy.ref` | Enforce organizational standards — require health endpoints, mandate ports, enforce visibility rules. See [policy]({{ site.baseurl }}{% link contract-reference.md %}#policy) |
 | `dependencies[].ref` | Validate dependency graph, check compatibility |
 | `docs/` *(optional)* | Access service documentation, runbooks, integration guides |
 | `sbom/` *(optional)* | Audit third-party packages, track license compliance |
@@ -154,6 +155,98 @@ The state model tells you exactly what storage and scheduling strategy a service
 
 ---
 
+## Configuration and policy
+
+Two features give platform teams direct control over the boundary between developers and infrastructure: **configuration schemas** and **policies**. Both can be centralized via OCI references, making them a cornerstone of the platform-as-a-product model.
+
+### Configuration: the interface between dev and platform
+
+The `configuration` section defines **the interface boundary between a service and its environment**. When a platform team publishes a shared configuration schema, it declares *what the platform provides* — database connections, observability endpoints, feature flags, secret paths. When a service author defines one, it declares *what the service requires*.
+
+There are two approaches:
+
+**Vendored:** The platform publishes a schema externally, and services copy it into their bundle at build time:
+
+```yaml
+configuration:
+  schema: configuration/platform-schema.json
+```
+
+**Referenced (OCI):** Services reference the platform's configuration contract directly. No vendoring required — Pacto resolves the schema from the referenced bundle at the fixed path `configuration/schema.json`:
+
+```yaml
+configuration:
+  ref: oci://ghcr.io/acme/platform-config-pacto:1.0.0
+```
+
+The OCI approach enables centralized configuration management: the platform team publishes one configuration contract, all services reference it, and updates propagate through version bumps — not copy-pasting files.
+
+See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) for the full breakdown of service-defined vs. platform-defined schemas.
+
+### Policy: enforcing contract standards
+
+The `policy` section lets platform teams enforce **minimum requirements on contracts themselves**. A policy is a JSON Schema that validates `pacto.yaml` — requiring health endpoints, mandating specific ports, enforcing visibility rules, or any other organizational standard.
+
+**How it works:**
+
+1. The platform team creates a policy contract containing a JSON Schema at `policy/schema.json`:
+
+```yaml
+# platform-policy/pacto.yaml
+pactoVersion: "1.0"
+service:
+  name: platform-policy
+  version: 1.0.0
+  owner: team/platform
+policy:
+  schema: policy/schema.json
+```
+
+2. The platform publishes it: `pacto push oci://ghcr.io/acme/platform-policy-pacto -p platform-policy`
+
+3. Services adopt the policy by referencing it:
+
+```yaml
+policy:
+  ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
+```
+
+Example policy schema (`policy/schema.json`) requiring all contracts to have a health check:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runtime"],
+  "properties": {
+    "runtime": {
+      "type": "object",
+      "required": ["health"],
+      "properties": {
+        "health": {
+          "type": "object",
+          "required": ["interface", "path"]
+        }
+      }
+    }
+  }
+}
+```
+
+Policy references support recursive resolution — if the referenced contract itself has a `policy.ref`, Pacto follows the chain with cycle detection.
+
+See [policy]({{ site.baseurl }}{% link contract-reference.md %}#policy) in the Contract Reference for the full specification.
+
+{: .important }
+> Configuration and policy are complementary:
+>
+> - **Configuration** defines what a service needs (or what the platform provides) — the *data interface*
+> - **Policy** enforces how contracts must be structured — the *contract interface*
+>
+> Together, they give platform teams a centralized, versioned, machine-validated governance model — without tickets, wikis, or manual review.
+
+---
+
 ## Breaking change detection
 
 `pacto diff` doesn't just compare contract fields — it performs deep OpenAPI diffing (paths, methods, parameters, request bodies, responses) and resolves both dependency trees to show the full blast radius.
@@ -256,4 +349,6 @@ See [pacto-actions](https://github.com/trianalab/pacto-actions) for full documen
 - **Use markdown output for PR comments.** `pacto diff --output-format markdown` renders changes as tables with old/new values — pipe it into `gh pr comment` for rich CI feedback.
 - **Use `--verbose` for debugging.** Pass `-v` to any command to see debug-level logs (OCI operations, resolution steps, cache hits/misses) on stderr.
 - **Check SBOM changes.** When bundles include SBOMs, `pacto diff` reports package-level changes — useful for tracking dependency drift, license compliance, and supply chain audits across contract versions.
+- **Enforce policies.** Publish a policy contract with a JSON Schema that validates contracts against your organizational standards. Services reference it via `policy.ref` — see [policy]({{ site.baseurl }}{% link contract-reference.md %}#policy) in the Contract Reference.
+- **Centralize configuration schemas.** Publish a configuration contract and have services reference it via `configuration.ref` instead of vendoring schemas. See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models).
 - **Leverage AI assistants.** Pacto contracts are machine-consumable. In addition to CI pipelines and platform controllers, AI assistants can interact with contracts directly through the [MCP interface]({{ site.baseurl }}{% link mcp-integration.md %}) — useful for ad-hoc inspection, dependency analysis, and contract generation.

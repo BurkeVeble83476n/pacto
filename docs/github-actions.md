@@ -30,6 +30,7 @@ on:
       - 'pacto.yaml'
       - 'interfaces/**'
       - 'configuration/**'
+      - 'policy/**'
 
 jobs:
   validate:

@@ -243,7 +243,7 @@ pacto init <name> [flags]
   -h, --help   help for init
 ```
 
-Creates a complete bundle with a valid `pacto.yaml`, a placeholder OpenAPI spec, and a configuration JSON Schema.
+Scaffolds a bundle with a valid `pacto.yaml`, a placeholder OpenAPI spec, and a configuration JSON Schema. Only `pacto.yaml` is required — the `interfaces/` and `configuration/` directories are optional conveniences.
 
 ---
 

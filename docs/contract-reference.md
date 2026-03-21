@@ -28,11 +28,13 @@ A Pacto bundle is a self-contained directory (or OCI artifact) with the followin
 ```
 /
 ├── pacto.yaml
-├── interfaces/
+├── interfaces/              ← optional
 │   ├── openapi.yaml
 │   ├── service.proto
 │   └── events.yaml
-├── configuration/
+├── configuration/           ← optional
+│   └── schema.json
+├── policy/                  ← optional
 │   └── schema.json
 ├── docs/                    ← optional
 │   ├── README.md
@@ -43,7 +45,7 @@ A Pacto bundle is a self-contained directory (or OCI artifact) with the followin
     └── sbom.spdx.json
 ```
 
-All files referenced by `pacto.yaml` must exist within the bundle. Validation enforces this.
+Only `pacto.yaml` is required. All other directories are optional — include them when your contract references files in them. Validation enforces that every file referenced by `pacto.yaml` exists within the bundle.
 
 When you run `pacto push`, the bundle is packaged as an OCI artifact — versioned, content-addressed, and distributable through any OCI registry. This is how contracts travel between teams, services, and environments.
 
@@ -133,6 +135,9 @@ interfaces:
 
 configuration:
   schema: configuration/schema.json
+
+policy:
+  ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
 
 dependencies:
   - ref: oci://ghcr.io/acme/auth-pacto@sha256:abc123def456
@@ -265,19 +270,36 @@ Interface names must be unique within a contract. The `contract` field for `http
 
 ### `configuration`
 
-Defines the service's configuration model.
+Defines the service's configuration model. Optional — services with no configuration schema may omit this section entirely. When present, at least one of `schema` or `ref` must be specified.
 
 | Field | Type | Required | Constraints |
 |-------|------|----------|-------------|
-| `schema` | string | Yes | Non-empty. Must reference a file in the bundle |
+| `schema` | string | Conditional | Non-empty. Must reference a file in the bundle. Required if `ref` is not set |
+| `ref` | string | Conditional | Non-empty. OCI or local reference to another Pacto contract. Required if `schema` is not set |
 | `values` | object | No | Must conform to the schema defined in `schema` |
+
+When `schema` is used, the configuration schema is a local file within the bundle. When `ref` is used, the schema is resolved from another Pacto contract's bundle at the fixed path `configuration/schema.json`. Both may be specified simultaneously.
 
 Required configuration keys are derived from the JSON Schema's `required` array.
 
-The optional `values` field provides default configuration values that are validated against the referenced JSON Schema. This is useful for documenting expected defaults or providing environment-specific overrides via the `--set` and `--values` flags (see [Contract overrides](#contract-overrides)).
+The optional `values` field provides default configuration values that are validated against the referenced JSON Schema. When using `ref`, values validation is deferred to runtime resolution. This is useful for documenting expected defaults or providing environment-specific overrides via the `--set` and `--values` flags (see [Contract overrides](#contract-overrides)).
 
 {: .tip }
 All files referenced by the contract — including the configuration schema — are packaged into the bundle when you run `pacto push`. The bundle is a self-contained OCI artifact that includes `pacto.yaml`, interface contracts, the configuration schema, and any other files in the contract directory.
+
+#### External configuration schema reference
+
+Instead of vendoring a configuration schema into the bundle, you can reference another Pacto contract that contains it. The referenced contract's bundle must have the schema at the fixed path `configuration/schema.json`:
+
+```yaml
+configuration:
+  ref: oci://ghcr.io/acme/platform-config-pacto:1.0.0
+```
+
+This enables centralized configuration management — a platform team publishes a single configuration contract, and all services reference it. The reference supports recursive resolution: if the referenced contract itself has a `configuration.ref`, Pacto follows the chain (with cycle detection) using the same OCI resolution and caching infrastructure as dependencies.
+
+{: .warning }
+Local configuration references (`file://` and bare paths) are only allowed during development. `pacto push` rejects contracts with local `configuration.ref` — all refs must use `oci://` before publishing.
 
 #### Secret references
 
@@ -331,13 +353,22 @@ Characteristics:
 
 #### Platform-Defined Schema
 
-When a platform team defines a shared configuration schema, the schema expresses **what the platform provides**. It describes the platform's capabilities — databases, caches, observability endpoints, feature flags — as a structured contract. Services vendor this schema into their bundle and conform to it.
+When a platform team defines a shared configuration schema, the schema expresses **what the platform provides**. It describes the platform's capabilities — databases, caches, observability endpoints, feature flags — as a structured contract.
 
-The schema file always lives inside the bundle — `configuration.schema` is a local path. The platform team publishes and distributes the schema externally (e.g. via an OCI registry, a shared repository, or a CI step that copies it in), but the contract references the vendored copy:
+There are two approaches for distributing platform schemas:
+
+**Vendored (local path):** The platform team publishes the schema externally, and services copy it into their bundle at build time:
 
 ```yaml
 configuration:
   schema: configuration/platform-schema.json
+```
+
+**Referenced (OCI):** Services reference the platform's configuration contract directly via `configuration.ref`. No vendoring required — Pacto resolves the schema from the referenced bundle at the fixed path `configuration/schema.json`:
+
+```yaml
+configuration:
+  ref: oci://ghcr.io/acme/platform-config-pacto:1.0.0
 ```
 
 Characteristics:
@@ -345,7 +376,7 @@ Characteristics:
 - **Standardization** — all services on the platform share a common configuration vocabulary
 - **Strong governance** — the platform team controls what configuration is available and validates it centrally
 - **Platform-as-a-product model** — the schema becomes part of the platform's public interface
-- **Vendored distribution** — services pull the schema at build time and bundle it locally
+- **Centralized or vendored** — choose between referencing the schema via OCI or vendoring it locally
 
 {: .important }
 > In Pacto, the configuration schema is an **interface**. Depending on ownership, it describes either:
@@ -357,7 +388,87 @@ Characteristics:
 
 #### Hybrid Approaches
 
-In practice, organizations may combine both models — a platform-defined base schema that covers shared infrastructure (database connections, observability, secrets) with service-specific extensions for application-level configuration. Pacto does not prescribe a specific pattern; the `configuration.schema` field accepts any valid JSON Schema reference regardless of where it originates.
+In practice, organizations may combine both models — a platform-defined base schema that covers shared infrastructure (database connections, observability, secrets) with service-specific extensions for application-level configuration. Pacto does not prescribe a specific pattern; both `configuration.schema` and `configuration.ref` can coexist, and the schema format is identical regardless of where it originates.
+
+---
+
+### `policy`
+
+Defines or references policy constraints for the contract. Optional — services not subject to a policy may omit this section entirely. A policy is a JSON Schema that validates the contract itself, enabling platform teams to enforce organizational standards (e.g., require health endpoints, mandate specific ports, enforce visibility rules).
+
+When present, at least one of `schema` or `ref` must be specified.
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| `schema` | string | Conditional | Non-empty. Path to a JSON Schema file in the bundle (convention: `policy/schema.json`). Required if `ref` is not set |
+| `ref` | string | Conditional | Non-empty. OCI or local reference to another Pacto contract whose bundle contains the policy schema at the fixed path `policy/schema.json`. Required if `schema` is not set |
+
+Both `schema` and `ref` may be specified simultaneously — the contract defines its own policy and also conforms to an external one.
+
+#### Policy as a contract author
+
+To define a policy, create a JSON Schema that describes constraints on `pacto.yaml` contracts and place it at `policy/schema.json` in the bundle:
+
+```yaml
+# pacto.yaml — a policy contract
+pactoVersion: "1.0"
+service:
+  name: platform-policy
+  version: 1.0.0
+  owner: team/platform
+policy:
+  schema: policy/schema.json
+```
+
+Example policy schema (`policy/schema.json`) requiring all contracts to have a health check:
+
+```json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["runtime"],
+  "properties": {
+    "runtime": {
+      "type": "object",
+      "required": ["health"],
+      "properties": {
+        "health": {
+          "type": "object",
+          "required": ["interface", "path"]
+        }
+      }
+    }
+  }
+}
+```
+
+#### Policy as a contract consumer
+
+To adopt a policy, reference the policy contract via OCI:
+
+```yaml
+policy:
+  ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
+```
+
+The referenced contract's bundle must have the policy schema at the fixed path `policy/schema.json`. The reference supports recursive resolution: if the referenced contract itself has a `policy.ref`, Pacto follows the chain (with cycle detection) using the same OCI resolution and caching infrastructure as dependencies.
+
+{: .warning }
+Local policy references (`file://` and bare paths) are only allowed during development. `pacto push` rejects contracts with local `policy.ref` — all refs must use `oci://` before publishing.
+
+#### Bundle structure with policy
+
+```
+/
+├── pacto.yaml
+├── interfaces/              ← optional
+├── configuration/           ← optional
+│   └── schema.json
+├── policy/                  ← optional
+│   └── schema.json          ← policy schema (for policy authors)
+├── docs/                    ← optional
+└── sbom/                    ← optional
+```
 
 ---
 
@@ -611,9 +722,13 @@ Validates semantic references and consistency:
 | `image.ref` is a valid OCI reference | `INVALID_IMAGE_REF` |
 | `chart.ref` (OCI) is a valid OCI reference | `INVALID_CHART_REF` |
 | `chart.version` is valid semver | `INVALID_CHART_VERSION` |
+| `configuration.ref` is not a valid OCI reference | `INVALID_CONFIG_REF` |
 | `configuration.values` without a `configuration.schema` | `VALUES_WITHOUT_SCHEMA` |
 | `configuration.schema` file is not valid JSON Schema | `INVALID_CONFIG_SCHEMA` |
 | `configuration.values` don't match the schema | `CONFIG_VALUES_VALIDATION_FAILED` |
+| `policy` has neither `schema` nor `ref` | `POLICY_EMPTY` |
+| `policy.schema` file does not exist in the bundle | `FILE_NOT_FOUND` |
+| `policy.ref` is not a valid OCI reference | `INVALID_POLICY_REF` |
 | `scaling.min` <= `scaling.max` | `SCALING_MIN_EXCEEDS_MAX` |
 | Job workloads cannot have scaling | `JOB_SCALING_NOT_ALLOWED` |
 | Stateless + persistent is invalid | `STATELESS_PERSISTENT_CONFLICT` |
@@ -851,6 +966,18 @@ Each change is classified as:
 | `configuration.schema` | Added | NON_BREAKING |
 | `configuration.schema` | Modified | POTENTIAL_BREAKING |
 | `configuration.schema` | Removed | **BREAKING** |
+| `configuration.ref` | Added | NON_BREAKING |
+| `configuration.ref` | Modified | POTENTIAL_BREAKING |
+| `configuration.ref` | Removed | **BREAKING** |
+
+### Policy
+
+| Field | Change | Classification |
+|-------|--------|----------------|
+| `policy` | Added | NON_BREAKING |
+| `policy` | Removed | POTENTIAL_BREAKING |
+| `policy.schema` | Modified | POTENTIAL_BREAKING |
+| `policy.ref` | Modified | POTENTIAL_BREAKING |
 
 ### Runtime
 

@@ -149,34 +149,42 @@ Instead of filing tickets, attending meetings, and writing wiki pages, a develop
 ## What's inside a Pacto bundle
 
 ```mermaid
-graph TD
+graph LR
     subgraph Bundle["Pacto Bundle"]
-        YAML["pacto.yaml"]
-        YAML --> Interfaces["Interfaces<br/>HTTP, gRPC, ports, visibility"]
-        YAML --> Dependencies["Dependencies<br/>oci://auth:2.0.0<br/>oci://db:1.0.0"]
-        YAML --> Runtime["Runtime<br/>state, health, lifecycle, scaling"]
-        YAML --> Config["Configuration<br/>JSON Schema"]
-        Docs["docs/<br/>README · runbooks · guides"]
-        SBOM["sbom/<br/>SPDX · CycloneDX"]
+        direction TB
+        YAML["pacto.yaml<br/><i>required</i>"]
+
+        subgraph Sections["Contract Sections <i>(all optional)</i>"]
+            direction TB
+            Interfaces["Interfaces<br/>HTTP · gRPC · ports · visibility"]
+            Dependencies["Dependencies<br/>oci://auth:2.0.0 · oci://db:1.0.0"]
+            Runtime["Runtime<br/>state · health · lifecycle · scaling"]
+            Config["Configuration<br/>schema.json"]
+            Policy["Policy<br/>schema.json"]
+        end
+
+        subgraph Extras["Metadata <i>(optional)</i>"]
+            direction TB
+            Docs["docs/<br/>README · runbooks · guides"]
+            SBOM["sbom/<br/>SPDX · CycloneDX"]
+        end
+
+        YAML --> Sections
     end
 
-    IF["interfaces/<br/>openapi.yaml · service.proto"]
-    CF["configuration/<br/>schema.json"]
-
-    Interfaces -.-> IF
-    Config -.-> CF
-    Bundle -- "pacto push" --> Registry["OCI Registry<br/>GHCR · ECR · ACR · Docker Hub"]
+    Bundle -- "pacto push" --> Registry["OCI Registry<br/>GHCR · ECR · ACR<br/>Docker Hub"]
 ```
 
 A bundle is a self-contained directory (or OCI artifact) containing:
 
-- **`pacto.yaml`** — the contract: interfaces, dependencies, runtime semantics, scaling
-- **`interfaces/`** — OpenAPI specs, protobuf definitions, event schemas
-- **`configuration/`** — JSON Schema for environment variables and settings
+- **`pacto.yaml`** — the contract: interfaces, dependencies, runtime semantics, scaling *(required)*
+- **`interfaces/`** *(optional)* — OpenAPI specs, protobuf definitions, event schemas
+- **`configuration/`** *(optional)* — JSON Schema for environment variables and settings
+- **`policy/`** *(optional)* — JSON Schema that validates the contract itself (organizational standards enforcement)
 - **`docs/`** *(optional)* — service documentation (README, runbooks, architecture notes)
 - **`sbom/`** *(optional)* — Software Bill of Materials in [SPDX](https://spdx.dev/) or [CycloneDX](https://cyclonedx.org/) format. `pacto diff` reports package-level changes when present
 
-All files referenced by `pacto.yaml` must exist within the bundle. Validation enforces this.
+Only `pacto.yaml` is required. All other directories are optional — include them when your contract references files in them. Validation enforces that every referenced file exists within the bundle.
 
 ---
 

@@ -71,6 +71,10 @@ func (s *Service) Push(ctx context.Context, opts PushOptions) (*PushResult, erro
 		return nil, err
 	}
 
+	if err := rejectLocalRefs(c); err != nil {
+		return nil, err
+	}
+
 	ref := parsed.Location
 	if !hasTagOrDigest(ref) {
 		ref = ref + ":" + c.Service.Version
@@ -127,6 +131,21 @@ func rejectLocalDeps(c *contract.Contract) error {
 	for _, dep := range c.Dependencies {
 		if graph.ParseDependencyRef(dep.Ref).IsLocal() {
 			return fmt.Errorf("local dependency detected: %s\nLocal dependencies are not allowed when publishing. All dependencies must use OCI references (oci://...)", dep.Ref)
+		}
+	}
+	return nil
+}
+
+// rejectLocalRefs returns an error if configuration.ref or policy.ref uses a local reference.
+func rejectLocalRefs(c *contract.Contract) error {
+	if c.Configuration != nil && c.Configuration.Ref != "" {
+		if graph.ParseDependencyRef(c.Configuration.Ref).IsLocal() {
+			return fmt.Errorf("local configuration ref detected: %s\nLocal references are not allowed when publishing. Use an OCI reference (oci://...)", c.Configuration.Ref)
+		}
+	}
+	if c.Policy != nil && c.Policy.Ref != "" {
+		if graph.ParseDependencyRef(c.Policy.Ref).IsLocal() {
+			return fmt.Errorf("local policy ref detected: %s\nLocal references are not allowed when publishing. Use an OCI reference (oci://...)", c.Policy.Ref)
 		}
 	}
 	return nil

@@ -639,3 +639,166 @@ func TestValidateConfigValues_InvalidValue(t *testing.T) {
 		t.Error("expected error for config value type mismatch")
 	}
 }
+
+func TestValidateConfigValues_ExternalRef(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{
+		Ref:    "oci://ghcr.io/acme/config-pacto:1.0.0",
+		Values: map[string]interface{}{"key": "val"},
+	}
+	var result ValidationResult
+	validateConfigValues(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error when using external ref with values")
+	}
+}
+
+func TestValidateConfigRef_NilConfig(t *testing.T) {
+	c := validContract()
+	c.Configuration = nil
+	var result ValidationResult
+	validateConfigRef(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil config")
+	}
+}
+
+func TestValidateConfigRef_EmptyRef(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{Schema: "schema.json"}
+	var result ValidationResult
+	validateConfigRef(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for empty ref")
+	}
+}
+
+func TestValidateConfigRef_ValidOCI(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{Ref: "oci://ghcr.io/acme/config-pacto:1.0.0"}
+	var result ValidationResult
+	validateConfigRef(c, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid OCI ref, got %v", result.Errors)
+	}
+}
+
+func TestValidateConfigRef_InvalidOCI(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{Ref: "oci://invalid"}
+	var result ValidationResult
+	validateConfigRef(c, &result)
+	if result.IsValid() {
+		t.Error("expected error for invalid OCI config ref")
+	}
+}
+
+func TestValidateConfigRef_LocalRef(t *testing.T) {
+	c := validContract()
+	c.Configuration = &contract.Configuration{Ref: "file://../config"}
+	var result ValidationResult
+	validateConfigRef(c, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for local config ref")
+	}
+}
+
+func TestValidatePolicyFields_NilPolicy(t *testing.T) {
+	c := validContract()
+	c.Policy = nil
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for nil policy")
+	}
+}
+
+func TestValidatePolicyFields_EmptyPolicy(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{}
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if result.IsValid() {
+		t.Error("expected error for empty policy")
+	}
+}
+
+func TestValidatePolicyFields_SchemaFileNotFound(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Schema: "policy/schema.json"}
+	bundleFS := fstest.MapFS{}
+	var result ValidationResult
+	validatePolicyFields(c, bundleFS, &result)
+	if result.IsValid() {
+		t.Error("expected error when policy schema file not found")
+	}
+}
+
+func TestValidatePolicyFields_SchemaFileExists(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Schema: "policy/schema.json"}
+	bundleFS := fstest.MapFS{
+		"policy/schema.json": &fstest.MapFile{Data: []byte("{}")},
+	}
+	var result ValidationResult
+	validatePolicyFields(c, bundleFS, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error when policy schema file exists, got %v", result.Errors)
+	}
+}
+
+func TestValidatePolicyFields_SchemaNilBundleFS(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Schema: "policy/schema.json"}
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error when bundleFS is nil")
+	}
+}
+
+func TestValidatePolicyFields_ValidOCIRef(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Ref: "oci://ghcr.io/acme/policy-pacto:1.0.0"}
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for valid OCI policy ref, got %v", result.Errors)
+	}
+}
+
+func TestValidatePolicyFields_InvalidOCIRef(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Ref: "oci://invalid"}
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if result.IsValid() {
+		t.Error("expected error for invalid OCI policy ref")
+	}
+}
+
+func TestValidatePolicyFields_LocalRef(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{Ref: "file://../policy"}
+	var result ValidationResult
+	validatePolicyFields(c, nil, &result)
+	if !result.IsValid() {
+		t.Error("expected no error for local policy ref")
+	}
+}
+
+func TestValidatePolicyFields_BothSchemaAndRef(t *testing.T) {
+	c := validContract()
+	c.Policy = &contract.Policy{
+		Schema: "policy/schema.json",
+		Ref:    "oci://ghcr.io/acme/policy-pacto:1.0.0",
+	}
+	bundleFS := fstest.MapFS{
+		"policy/schema.json": &fstest.MapFile{Data: []byte("{}")},
+	}
+	var result ValidationResult
+	validatePolicyFields(c, bundleFS, &result)
+	if !result.IsValid() {
+		t.Errorf("expected no error for policy with both schema and ref, got %v", result.Errors)
+	}
+}

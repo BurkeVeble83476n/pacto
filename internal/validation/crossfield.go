@@ -25,6 +25,8 @@ func ValidateCrossField(c *contract.Contract, bundleFS fs.FS) ValidationResult {
 	validateMetricsInterface(c, &result)
 	validateInterfaceFiles(c, bundleFS, &result)
 	validateConfigFiles(c, bundleFS, &result)
+	validateConfigRef(c, &result)
+	validatePolicyFields(c, bundleFS, &result)
 	validateDependencyRefs(c, &result)
 	validateImageRef(c, &result)
 	validateChartRef(c, &result)
@@ -236,6 +238,45 @@ func validateConfigFiles(c *contract.Contract, bundleFS fs.FS, result *Validatio
 	}
 }
 
+func validateConfigRef(c *contract.Contract, result *ValidationResult) {
+	if c.Configuration == nil || c.Configuration.Ref == "" {
+		return
+	}
+	parsed := graph.ParseDependencyRef(c.Configuration.Ref)
+	if parsed.IsOCI() {
+		validateOCIRef(parsed.Location, "configuration.ref", "INVALID_CONFIG_REF", result)
+	}
+}
+
+func validatePolicyFields(c *contract.Contract, bundleFS fs.FS, result *ValidationResult) {
+	if c.Policy == nil {
+		return
+	}
+	if c.Policy.Schema == "" && c.Policy.Ref == "" {
+		result.AddError(
+			"policy",
+			"POLICY_EMPTY",
+			"policy must specify at least one of schema or ref",
+		)
+		return
+	}
+	if c.Policy.Schema != "" && bundleFS != nil {
+		if _, err := fs.Stat(bundleFS, c.Policy.Schema); err != nil {
+			result.AddError(
+				"policy.schema",
+				"FILE_NOT_FOUND",
+				fmt.Sprintf("policy schema file %q not found in bundle", c.Policy.Schema),
+			)
+		}
+	}
+	if c.Policy.Ref != "" {
+		parsed := graph.ParseDependencyRef(c.Policy.Ref)
+		if parsed.IsOCI() {
+			validateOCIRef(parsed.Location, "policy.ref", "INVALID_POLICY_REF", result)
+		}
+	}
+}
+
 func validateDependencyRefs(c *contract.Contract, result *ValidationResult) {
 	for i, dep := range c.Dependencies {
 		parsed := graph.ParseDependencyRef(dep.Ref)
@@ -318,12 +359,16 @@ func validateConfigValues(c *contract.Contract, bundleFS fs.FS, result *Validati
 	if c.Configuration == nil || len(c.Configuration.Values) == 0 {
 		return
 	}
-	if c.Configuration.Schema == "" {
+	if c.Configuration.Schema == "" && c.Configuration.Ref == "" {
 		result.AddError(
 			"configuration.values",
 			"VALUES_WITHOUT_SCHEMA",
 			"configuration values require a configuration schema to validate against",
 		)
+		return
+	}
+	if c.Configuration.Schema == "" {
+		// Schema is external (ref) — values validation deferred to runtime resolution.
 		return
 	}
 	if bundleFS == nil {

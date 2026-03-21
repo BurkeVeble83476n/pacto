@@ -169,13 +169,15 @@ my-service/
   src/
   Dockerfile
   pacto.yaml             ← single source of truth
-  interfaces/
+  interfaces/            ← optional
     openapi.yaml
-  configuration/
+  configuration/         ← optional
     schema.json
-  docs/                   ← optional documentation
+  policy/                ← optional
+    schema.json
+  docs/                  ← optional
     README.md
-  sbom/                   ← optional SBOM
+  sbom/                  ← optional
     sbom.spdx.json
 ```
 
@@ -193,32 +195,42 @@ pacto graph .             # shows dependency tree
 ## What's inside a Pacto bundle
 
 ```mermaid
-graph TD
+graph LR
     subgraph Bundle["Pacto Bundle"]
-        YAML["pacto.yaml"]
-        YAML --> Interfaces["Interfaces<br/>HTTP, gRPC, ports, visibility"]
-        YAML --> Dependencies["Dependencies<br/>oci://auth:2.0.0<br/>oci://db:1.0.0"]
-        YAML --> Runtime["Runtime<br/>state, health, lifecycle, scaling"]
-        YAML --> Config["Configuration<br/>JSON Schema"]
-        Docs["docs/<br/>README · runbooks · guides"]
-        SBOM["sbom/<br/>SPDX · CycloneDX"]
+        direction TB
+        YAML["pacto.yaml<br/><i>required</i>"]
+
+        subgraph Sections["Contract Sections <i>(all optional)</i>"]
+            direction TB
+            Interfaces["Interfaces<br/>HTTP · gRPC · ports · visibility"]
+            Dependencies["Dependencies<br/>oci://auth:2.0.0 · oci://db:1.0.0"]
+            Runtime["Runtime<br/>state · health · lifecycle · scaling"]
+            Config["Configuration<br/>schema.json"]
+            Policy["Policy<br/>schema.json"]
+        end
+
+        subgraph Extras["Metadata <i>(optional)</i>"]
+            direction TB
+            Docs["docs/<br/>README · runbooks · guides"]
+            SBOM["sbom/<br/>SPDX · CycloneDX"]
+        end
+
+        YAML --> Sections
     end
 
-    IF["interfaces/<br/>openapi.yaml · service.proto"]
-    CF["configuration/<br/>schema.json"]
-
-    Interfaces -.-> IF
-    Config -.-> CF
-    Bundle -- "pacto push" --> Registry["OCI Registry<br/>GHCR · ECR · ACR · Docker Hub"]
+    Bundle -- "pacto push" --> Registry["OCI Registry<br/>GHCR · ECR · ACR<br/>Docker Hub"]
 ```
 
 A bundle is a self-contained directory (or OCI artifact) containing:
 
-- **`pacto.yaml`** — the contract: interfaces, dependencies, runtime semantics, scaling
-- **`interfaces/`** — OpenAPI specs, protobuf definitions, event schemas
-- **`configuration/`** — JSON Schema for environment variables and settings
+- **`pacto.yaml`** — the contract: interfaces, dependencies, runtime semantics, scaling *(required)*
+- **`interfaces/`** *(optional)* — OpenAPI specs, protobuf definitions, event schemas
+- **`configuration/`** *(optional)* — JSON Schema for environment variables and settings
+- **`policy/`** *(optional)* — JSON Schema that validates the contract itself, enabling platform teams to enforce organizational standards
 - **`docs/`** *(optional)* — service documentation (README, runbooks, architecture notes, integration guides). Travels with the contract but has no effect on validation, diffing, or compatibility classification
 - **`sbom/`** *(optional)* — Software Bill of Materials in SPDX 2.3 (`.spdx.json`) or CycloneDX 1.5 (`.cdx.json`) format. When present, `pacto diff` reports package-level changes (added, removed, version/license modified). Generate with tools like [Syft](https://github.com/anchore/syft), [Trivy](https://github.com/aquasecurity/trivy), or [cdxgen](https://github.com/CycloneDX/cdxgen)
+
+Only `pacto.yaml` is required. All other directories are optional — include them when your contract references files in them.
 
 ## Example repository layout
 
@@ -227,14 +239,16 @@ payments-api/
   src/                           ← your application code
   Dockerfile
   pacto.yaml                     ← the contract (committed to the repo)
-  interfaces/
-    openapi.yaml                 ← referenced by pacto.yaml
-  configuration/
-    schema.json                  ← JSON Schema for env vars / config
-  docs/                          ← optional service documentation
+  interfaces/                    ← optional, referenced by pacto.yaml
+    openapi.yaml
+  configuration/                 ← optional, JSON Schema for config
+    schema.json
+  policy/                        ← optional, policy enforcement
+    schema.json
+  docs/                          ← optional, service documentation
     README.md
     runbook.md
-  sbom/                          ← optional SBOM (SPDX or CycloneDX)
+  sbom/                          ← optional, SBOM (SPDX or CycloneDX)
     sbom.spdx.json
   .github/workflows/
     ci.yml                       ← pacto validate + pacto diff + pacto push

@@ -56,7 +56,14 @@ configuration:
   schema: config.schema.json
 ```
 
-When you define your own configuration schema, you are declaring **what your service requires** to run. This is the most common model for services that need to be portable across environments. If your platform team provides a shared schema instead, your service vendors it into the bundle and conforms to it. See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) for details.
+When you define your own configuration schema, you are declaring **what your service requires** to run. This is the most common model for services that need to be portable across environments. If your platform team provides a shared schema instead, you can either vendor it into your bundle or reference it via OCI:
+
+```yaml
+configuration:
+  ref: oci://ghcr.io/acme/platform-config-pacto:1.0.0
+```
+
+See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) for details.
 
 If your service exposes an HTTP API using FastAPI or Huma, use the `openapi-infer` plugin to extract an OpenAPI 3.1 spec from your source code:
 
@@ -168,7 +175,18 @@ If your service depends on a cloud-managed resource (e.g. a database or message 
 
 Use `pacto graph` to visualize your dependency tree.
 
-### 6. Reference your Helm chart (optional)
+### 6. Adopt a policy (optional)
+
+If your platform team publishes a policy contract, reference it in your contract:
+
+```yaml
+policy:
+  ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
+```
+
+A policy is a JSON Schema that validates the contract itself — enforcing organizational standards like requiring health endpoints or mandating specific ports. See [policy]({{ site.baseurl }}{% link contract-reference.md %}#policy) in the Contract Reference for details.
+
+### 7. Reference your Helm chart (optional)
 
 If your service is deployed via a Helm chart, reference it in the contract:
 
@@ -193,7 +211,7 @@ service:
 {: .warning }
 Local chart references are rejected by `pacto push`. Switch to an OCI reference before publishing.
 
-### 7. Validate before pushing
+### 8. Validate before pushing
 
 ```bash
 pacto validate my-service
@@ -205,7 +223,7 @@ Validation catches errors in three layers:
 2. **Cross-field** — interface references match, state invariants hold, files exist
 3. **Semantic** — strategy consistency warnings
 
-### 8. Pack and push
+### 9. Pack and push
 
 ```bash
 pacto pack my-service

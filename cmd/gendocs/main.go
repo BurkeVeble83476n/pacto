@@ -87,7 +87,7 @@ No credentials are ever stored in contract files.
 // details, output examples, and cross-references that cannot be derived
 // from the cobra command definition alone.
 var commandNotes = map[string]string{
-	"init": `Creates a complete bundle with a valid ` + "`pacto.yaml`" + `, a placeholder OpenAPI spec, and a configuration JSON Schema.`,
+	"init": `Scaffolds a bundle with a valid ` + "`pacto.yaml`" + `, a placeholder OpenAPI spec, and a configuration JSON Schema. Only ` + "`pacto.yaml`" + ` is required — the ` + "`interfaces/`" + ` and ` + "`configuration/`" + ` directories are optional conveniences.`,
 
 	"validate": `**Exit code:** Non-zero if validation fails.`,
 

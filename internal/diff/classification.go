@@ -38,8 +38,17 @@ var rules = map[classificationKey]Classification{
 	{"configuration.schema", Modified}: PotentialBreaking,
 	{"configuration.schema", Added}:    NonBreaking,
 	{"configuration.schema", Removed}:  Breaking,
+	{"configuration.ref", Modified}:    PotentialBreaking,
+	{"configuration.ref", Added}:       NonBreaking,
+	{"configuration.ref", Removed}:     Breaking,
 	{"configuration", Added}:           NonBreaking,
 	{"configuration", Removed}:         Breaking,
+
+	// Policy
+	{"policy", Added}:           NonBreaking,
+	{"policy", Removed}:         PotentialBreaking,
+	{"policy.schema", Modified}: PotentialBreaking,
+	{"policy.ref", Modified}:    PotentialBreaking,
 
 	// Runtime — workload
 	{"runtime.workload", Modified}: Breaking,

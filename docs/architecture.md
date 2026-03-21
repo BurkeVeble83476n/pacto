@@ -53,7 +53,7 @@ Dependencies flow **downward only**. No package imports a package above it.
 
 The only public package. Contains pure Go types and logic with **zero I/O and zero framework dependencies**.
 
-- `Contract`, `ServiceIdentity`, `Interface`, `Runtime`, `State`, etc.
+- `Contract`, `ServiceIdentity`, `Interface`, `Runtime`, `State`, `Configuration`, `Policy`, etc.
 - `Parse()` — YAML deserialization
 - `OCIReference` — OCI reference parsing
 - `Range` — Semver constraint evaluation
@@ -93,7 +93,7 @@ Compares two contracts and classifies every change using a deterministic rule ta
 
 - `contract.go` — service identity, scaling
 - `runtime.go` — workload, state, lifecycle, health
-- `interfaces.go` — interface additions/removals/changes
+- `interfaces.go` — interface additions/removals/changes, configuration and policy diffing
 - `dependency.go` — dependency list changes
 - `openapi.go` — deep OpenAPI diff (paths, methods, parameters, request bodies, responses)
 - `schema.go` — JSON Schema property-level diff

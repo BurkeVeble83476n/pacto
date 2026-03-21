@@ -377,6 +377,97 @@ func TestPush_ResolveNonNotFoundError(t *testing.T) {
 	}
 }
 
+func TestPush_RejectsLocalConfigRef(t *testing.T) {
+	dir := t.TempDir()
+	content := []byte(`pactoVersion: "1.0"
+service:
+  name: test-svc
+  version: "1.0.0"
+interfaces:
+  - name: api
+    type: http
+    port: 8080
+configuration:
+  ref: "../local-config"
+runtime:
+  workload: service
+  state:
+    type: stateless
+    persistence:
+      scope: local
+      durability: ephemeral
+    dataCriticality: low
+  health:
+    interface: api
+    path: /health
+`)
+	if err := os.WriteFile(filepath.Join(dir, "pacto.yaml"), content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	store := &mockBundleStore{}
+	svc := NewService(store, nil)
+	_, err := svc.Push(context.Background(), PushOptions{Ref: "oci://ghcr.io/acme/svc:1.0.0", Path: dir})
+	if err == nil {
+		t.Fatal("expected error for local config ref")
+	}
+	if !strings.Contains(err.Error(), "local configuration ref detected") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestRejectLocalRefs_NilPolicyAndConfig(t *testing.T) {
+	c := &contract.Contract{}
+	if err := rejectLocalRefs(c); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRejectLocalRefs_LocalConfigRef(t *testing.T) {
+	c := &contract.Contract{
+		Configuration: &contract.Configuration{Ref: "file://../config"},
+	}
+	err := rejectLocalRefs(c)
+	if err == nil {
+		t.Fatal("expected error for local config ref")
+	}
+	if !strings.Contains(err.Error(), "local configuration ref detected") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRejectLocalRefs_LocalPolicyRef(t *testing.T) {
+	c := &contract.Contract{
+		Policy: &contract.Policy{Ref: "../policy"},
+	}
+	err := rejectLocalRefs(c)
+	if err == nil {
+		t.Fatal("expected error for local policy ref")
+	}
+	if !strings.Contains(err.Error(), "local policy ref detected") {
+		t.Errorf("unexpected error message: %v", err)
+	}
+}
+
+func TestRejectLocalRefs_OCIRefsAllowed(t *testing.T) {
+	c := &contract.Contract{
+		Configuration: &contract.Configuration{Ref: "oci://ghcr.io/acme/config:1.0.0"},
+		Policy:        &contract.Policy{Ref: "oci://ghcr.io/acme/policy:1.0.0"},
+	}
+	if err := rejectLocalRefs(c); err != nil {
+		t.Fatalf("unexpected error for OCI refs: %v", err)
+	}
+}
+
+func TestRejectLocalRefs_EmptyRefs(t *testing.T) {
+	c := &contract.Contract{
+		Configuration: &contract.Configuration{Schema: "configuration/schema.json"},
+		Policy:        &contract.Policy{Schema: "policy/schema.json"},
+	}
+	if err := rejectLocalRefs(c); err != nil {
+		t.Fatalf("unexpected error for empty refs: %v", err)
+	}
+}
+
 func TestIsNotFound(t *testing.T) {
 	tests := []struct {
 		name string

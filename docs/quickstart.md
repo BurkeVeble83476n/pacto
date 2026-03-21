@@ -43,7 +43,7 @@ Created my-service/
   my-service/configuration/
 ```
 
-This creates a complete bundle structure with a valid contract, a placeholder OpenAPI spec, and a configuration JSON Schema.
+This scaffolds a bundle with a valid contract, a placeholder OpenAPI spec, and a configuration JSON Schema. Only `pacto.yaml` is required — the `interfaces/` and `configuration/` directories are optional conveniences that you can remove if your service doesn't need them.
 
 ## 3. Validate
 
@@ -67,7 +67,7 @@ service:
   owner: team/backend
 ```
 
-Add sections as needed — interfaces, runtime semantics, dependencies, configuration, scaling. See the [Contract Reference]({{ site.baseurl }}{% link contract-reference.md %}) for every available field.
+Add sections as needed — interfaces, runtime semantics, dependencies, configuration, policy, scaling. See the [Contract Reference]({{ site.baseurl }}{% link contract-reference.md %}) for every available field.
 
 ## 5. Pack and push
 

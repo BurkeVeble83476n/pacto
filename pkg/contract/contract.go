@@ -6,6 +6,7 @@ type Contract struct {
 	Service       ServiceIdentity        `yaml:"service" json:"service"`
 	Interfaces    []Interface            `yaml:"interfaces" json:"interfaces"`
 	Configuration *Configuration         `yaml:"configuration,omitempty" json:"configuration,omitempty"`
+	Policy        *Policy                `yaml:"policy,omitempty" json:"policy,omitempty"`
 	Dependencies  []Dependency           `yaml:"dependencies,omitempty" json:"dependencies,omitempty"`
 	Runtime       *Runtime               `yaml:"runtime,omitempty" json:"runtime,omitempty"`
 	Scaling       *Scaling               `yaml:"scaling,omitempty" json:"scaling,omitempty"`
@@ -58,8 +59,16 @@ const (
 // Configuration describes the service's configuration model.
 // Required configuration keys are derived exclusively from JSON Schema.
 type Configuration struct {
-	Schema string                 `yaml:"schema" json:"schema"`
+	Schema string                 `yaml:"schema,omitempty" json:"schema,omitempty"`
+	Ref    string                 `yaml:"ref,omitempty" json:"ref,omitempty"`
 	Values map[string]interface{} `yaml:"values,omitempty" json:"values,omitempty"`
+}
+
+// Policy defines or references policy constraints for the contract.
+// A policy is a JSON Schema that validates the contract itself.
+type Policy struct {
+	Schema string `yaml:"schema,omitempty" json:"schema,omitempty"`
+	Ref    string `yaml:"ref,omitempty" json:"ref,omitempty"`
 }
 
 // Dependency represents a dependency on another service.

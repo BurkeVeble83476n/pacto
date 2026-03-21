@@ -39,7 +39,7 @@ Every question you'd normally have to ask the dev team — or discover in produc
 | `runtime.lifecycle.upgradeStrategy: ordered` | Use ordered pod management |
 | `runtime.lifecycle.gracefulShutdownSeconds` | Set termination grace period |
 | `scaling.min` / `scaling.max` | Configure auto-scaling bounds |
-| `configuration.schema` | Validate required configuration, generate config templates |
+| `configuration.schema` | Validate required configuration, generate config templates. Platform teams can publish a shared schema that services vendor into their bundles — the schema then expresses what the platform *provides*. See [Configuration Schema Ownership Models]({{ site.baseurl }}{% link contract-reference.md %}#configuration-schema-ownership-models) |
 | `dependencies[].ref` | Validate dependency graph, check compatibility |
 | `docs/` *(optional)* | Access service documentation, runbooks, integration guides |
 | `sbom/` *(optional)* | Audit third-party packages, track license compliance |

@@ -331,11 +331,13 @@ Characteristics:
 
 #### Platform-Defined Schema
 
-When a platform team defines a shared configuration schema, the schema expresses **what the platform provides**. It describes the platform's capabilities — databases, caches, observability endpoints, feature flags — as a structured contract. Services conform to this schema and provide values within its boundaries.
+When a platform team defines a shared configuration schema, the schema expresses **what the platform provides**. It describes the platform's capabilities — databases, caches, observability endpoints, feature flags — as a structured contract. Services vendor this schema into their bundle and conform to it.
+
+The schema file always lives inside the bundle — `configuration.schema` is a local path. The platform team publishes and distributes the schema externally (e.g. via an OCI registry, a shared repository, or a CI step that copies it in), but the contract references the vendored copy:
 
 ```yaml
 configuration:
-  schema: oci://ghcr.io/acme/platform-config-schema:v1
+  schema: configuration/platform-schema.json
 ```
 
 Characteristics:
@@ -343,6 +345,7 @@ Characteristics:
 - **Standardization** — all services on the platform share a common configuration vocabulary
 - **Strong governance** — the platform team controls what configuration is available and validates it centrally
 - **Platform-as-a-product model** — the schema becomes part of the platform's public interface
+- **Vendored distribution** — services pull the schema at build time and bundle it locally
 
 {: .important }
 > In Pacto, the configuration schema is an **interface**. Depending on ownership, it describes either:

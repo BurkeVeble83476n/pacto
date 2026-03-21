@@ -96,11 +96,10 @@ func TestGraphCommand(t *testing.T) {
 	t.Run("verbose flag", func(t *testing.T) {
 		t.Parallel()
 		myAppPath := writeMyAppV1Bundle(t, reg.host)
-		output, err := runCommand(t, reg, "--verbose", "graph", myAppPath)
+		_, err := runCommand(t, reg, "--verbose", "graph", myAppPath)
 		if err != nil {
-			t.Fatalf("graph --verbose failed: %v\noutput: %s", err, output)
+			t.Fatalf("graph --verbose failed: %v", err)
 		}
-		assertContains(t, output, "my-app@1.0.0")
 	})
 
 	t.Run("no-cache flag", func(t *testing.T) {

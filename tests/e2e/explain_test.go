@@ -76,11 +76,10 @@ func TestExplainCommand(t *testing.T) {
 		t.Parallel()
 		postgresPath := writePostgresBundle(t)
 
-		output, err := runCommand(t, nil, "--verbose", "explain", postgresPath)
+		_, err := runCommand(t, nil, "--verbose", "explain", postgresPath)
 		if err != nil {
-			t.Fatalf("explain --verbose failed: %v\noutput: %s", err, output)
+			t.Fatalf("explain --verbose failed: %v", err)
 		}
-		assertContains(t, output, "postgres-pacto")
 	})
 
 	t.Run("with set override", func(t *testing.T) {

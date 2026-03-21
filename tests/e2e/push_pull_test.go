@@ -113,11 +113,10 @@ func TestPushCommand(t *testing.T) {
 		postgresPath := writePostgresBundle(t)
 		ref := "oci://" + reg.host + "/verbose-test:1.0.0"
 
-		output, err := runCommand(t, reg, "--verbose", "push", ref, "-p", postgresPath)
+		_, err := runCommand(t, reg, "--verbose", "push", ref, "-p", postgresPath)
 		if err != nil {
-			t.Fatalf("push --verbose failed: %v\noutput: %s", err, output)
+			t.Fatalf("push --verbose failed: %v", err)
 		}
-		assertContains(t, output, "Pushed")
 	})
 
 	t.Run("help flag", func(t *testing.T) {

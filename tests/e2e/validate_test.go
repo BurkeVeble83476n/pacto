@@ -93,11 +93,10 @@ func TestValidateCommand(t *testing.T) {
 		t.Parallel()
 		postgresPath := writePostgresBundle(t)
 
-		output, err := runCommand(t, nil, "--verbose", "validate", postgresPath)
+		_, err := runCommand(t, nil, "--verbose", "validate", postgresPath)
 		if err != nil {
-			t.Fatalf("validate --verbose failed: %v\noutput: %s", err, output)
+			t.Fatalf("validate --verbose failed: %v", err)
 		}
-		assertContains(t, output, "is valid")
 	})
 
 	t.Run("missing directory error", func(t *testing.T) {

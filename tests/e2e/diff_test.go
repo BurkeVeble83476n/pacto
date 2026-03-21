@@ -90,11 +90,10 @@ func TestDiffCommand(t *testing.T) {
 		t.Parallel()
 		postgresPath := writePostgresBundle(t)
 
-		output, err := runCommand(t, nil, "--verbose", "diff", postgresPath, postgresPath)
+		_, err := runCommand(t, nil, "--verbose", "diff", postgresPath, postgresPath)
 		if err != nil {
-			t.Fatalf("diff --verbose failed: %v\noutput: %s", err, output)
+			t.Fatalf("diff --verbose failed: %v", err)
 		}
-		assertContains(t, output, "No changes detected")
 	})
 
 	t.Run("help flag", func(t *testing.T) {

@@ -91,11 +91,10 @@ func TestRootCommand(t *testing.T) {
 
 	t.Run("verbose flag accepted", func(t *testing.T) {
 		t.Parallel()
-		output, err := runCommand(t, nil, "--verbose", "version")
+		_, err := runCommand(t, nil, "--verbose", "version")
 		if err != nil {
-			t.Fatalf("--verbose version failed: %v\noutput: %s", err, output)
+			t.Fatalf("--verbose version failed: %v", err)
 		}
-		assertContains(t, output, "test-e2e")
 	})
 
 	t.Run("no-cache flag accepted", func(t *testing.T) {

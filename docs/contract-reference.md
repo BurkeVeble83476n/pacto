@@ -310,6 +310,57 @@ Your configuration JSON Schema should declare secret fields as strings:
 
 ---
 
+### Configuration Schema Ownership Models
+
+The `configuration.schema` field is an **interface**. It defines a boundary between a service and its environment. The schema itself is always a JSON Schema document — but its *meaning* depends on who defines it.
+
+#### Service-Defined Schema
+
+When a service defines its own configuration schema, the schema expresses **what the service requires** to run. The service author knows what configuration keys the service reads, what types they expect, and which ones are mandatory.
+
+```yaml
+configuration:
+  schema: configuration/schema.json
+```
+
+Characteristics:
+
+- **High portability** — the contract carries its own requirements, deployable on any platform
+- **Service autonomy** — each team defines exactly what their service needs
+- **Common in** open-source projects, small teams, and services that run across multiple environments
+
+#### Platform-Defined Schema
+
+When a platform team defines a shared configuration schema, the schema expresses **what the platform provides**. It describes the platform's capabilities — databases, caches, observability endpoints, feature flags — as a structured contract. Services vendor this schema into their bundle and conform to it.
+
+The schema file always lives inside the bundle — `configuration.schema` is a local path. The platform team publishes and distributes the schema externally (e.g. via an OCI registry, a shared repository, or a CI step that copies it in), but the contract references the vendored copy:
+
+```yaml
+configuration:
+  schema: configuration/platform-schema.json
+```
+
+Characteristics:
+
+- **Standardization** — all services on the platform share a common configuration vocabulary
+- **Strong governance** — the platform team controls what configuration is available and validates it centrally
+- **Platform-as-a-product model** — the schema becomes part of the platform's public interface
+- **Vendored distribution** — services pull the schema at build time and bundle it locally
+
+{: .important }
+> In Pacto, the configuration schema is an **interface**. Depending on ownership, it describes either:
+>
+> - what a **service requires** (service-defined), or
+> - what a **platform provides** (platform-defined)
+>
+> The schema format and validation mechanics are identical in both cases. The difference is purely one of ownership and intent.
+
+#### Hybrid Approaches
+
+In practice, organizations may combine both models — a platform-defined base schema that covers shared infrastructure (database connections, observability, secrets) with service-specific extensions for application-level configuration. Pacto does not prescribe a specific pattern; the `configuration.schema` field accepts any valid JSON Schema reference regardless of where it originates.
+
+---
+
 ### `dependencies`
 
 Declares dependencies on other services via their Pacto contracts.

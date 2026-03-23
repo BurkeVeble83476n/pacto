@@ -1,6 +1,11 @@
 package dashboard
 
-import "time"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+)
 
 // Phase represents the overall health status of a service.
 type Phase string
@@ -350,6 +355,86 @@ type ChecksSummary struct {
 	Total  int `json:"total"`
 	Passed int `json:"passed"`
 	Failed int `json:"failed"`
+}
+
+// GenerateInsights derives diagnostic insights from the service details
+// when no operator-provided insights exist. This is the single source of
+// truth for insight generation — the UI consumes these directly.
+func (d *ServiceDetails) GenerateInsights() {
+	if len(d.Insights) > 0 {
+		return
+	}
+	var ins []Insight
+
+	switch d.Phase {
+	case PhaseInvalid:
+		ins = append(ins, Insight{Severity: "critical", Title: "Contract is invalid", Description: "One or more critical validation checks have failed."})
+	case PhaseDegraded:
+		ins = append(ins, Insight{Severity: "warning", Title: "Contract is degraded", Description: "Some validation checks are failing but service is operational."})
+	}
+
+	ins = append(ins, validationInsights(d.Validation)...)
+	ins = append(ins, resourceInsights(d.Resources)...)
+	ins = append(ins, portInsights(d.Ports)...)
+
+	d.Insights = ins
+}
+
+func validationInsights(v *ValidationInfo) []Insight {
+	if v == nil {
+		return nil
+	}
+	var ins []Insight
+	if n := len(v.Errors); n > 0 {
+		ins = append(ins, Insight{Severity: "critical", Title: strconv.Itoa(n) + " validation error" + plural(n), Description: v.Errors[0].Message})
+	}
+	if n := len(v.Warnings); n > 0 {
+		ins = append(ins, Insight{Severity: "warning", Title: strconv.Itoa(n) + " validation warning" + plural(n), Description: v.Warnings[0].Message})
+	}
+	return ins
+}
+
+func resourceInsights(r *ResourcesInfo) []Insight {
+	if r == nil {
+		return nil
+	}
+	var ins []Insight
+	if r.ServiceExists != nil && !*r.ServiceExists {
+		ins = append(ins, Insight{Severity: "critical", Title: "Service resource not found", Description: "The Kubernetes Service resource does not exist."})
+	}
+	if r.WorkloadExists != nil && !*r.WorkloadExists {
+		ins = append(ins, Insight{Severity: "critical", Title: "Workload not found", Description: "The target workload does not exist."})
+	}
+	return ins
+}
+
+func portInsights(p *PortsInfo) []Insight {
+	if p == nil {
+		return nil
+	}
+	var ins []Insight
+	if len(p.Missing) > 0 {
+		ins = append(ins, Insight{Severity: "warning", Title: "Missing ports: " + joinInts(p.Missing), Description: "Ports declared in contract but not found on the service."})
+	}
+	if len(p.Unexpected) > 0 {
+		ins = append(ins, Insight{Severity: "info", Title: "Unexpected ports: " + joinInts(p.Unexpected), Description: "Ports found on the service but not declared in contract."})
+	}
+	return ins
+}
+
+func plural(n int) string {
+	if n != 1 {
+		return "s"
+	}
+	return ""
+}
+
+func joinInts(vals []int) string {
+	s := make([]string, len(vals))
+	for i, v := range vals {
+		s[i] = fmt.Sprintf("%d", v)
+	}
+	return strings.Join(s, ", ")
 }
 
 // ServiceListEntry is an enriched Service for the list view, including

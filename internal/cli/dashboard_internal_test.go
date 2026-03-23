@@ -187,12 +187,106 @@ func TestNewDashboardCommand_NoSourcesDetails(t *testing.T) {
 	}
 }
 
+func TestNewDashboardCommand_RepoEnvVar(t *testing.T) {
+	emptyDir := t.TempDir()
+	t.Setenv("PACTO_DASHBOARD_REPO", "ghcr.io/org/svc-a,ghcr.io/org/svc-b")
+	t.Setenv("HOME", emptyDir)
+	t.Setenv("XDG_CACHE_HOME", emptyDir)
+	t.Setenv("KUBECONFIG", filepath.Join(emptyDir, "nonexistent"))
+
+	svc := app.NewService(dummyStore{}, nil)
+	v := viper.New()
+	cmd := newDashboardCommand(svc, v)
+	cmd.SetArgs([]string{emptyDir, "--port", "0"})
+
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	cmd.SetOut(&bytes.Buffer{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	_ = cmd.Execute()
+
+	stderr := errBuf.String()
+	if !strings.Contains(stderr, "oci") {
+		t.Errorf("expected stderr to mention 'oci' source when PACTO_DASHBOARD_REPO is set, got:\n%s", stderr)
+	}
+}
+
+func TestNewDashboardCommand_RepoFlagOverridesEnv(t *testing.T) {
+	emptyDir := t.TempDir()
+	t.Setenv("PACTO_DASHBOARD_REPO", "ghcr.io/org/from-env")
+	t.Setenv("HOME", emptyDir)
+	t.Setenv("XDG_CACHE_HOME", emptyDir)
+	t.Setenv("KUBECONFIG", filepath.Join(emptyDir, "nonexistent"))
+
+	svc := app.NewService(dummyStore{}, nil)
+	v := viper.New()
+	cmd := newDashboardCommand(svc, v)
+	cmd.SetArgs([]string{emptyDir, "--port", "0", "--repo", "ghcr.io/org/from-flag"})
+
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	cmd.SetOut(&bytes.Buffer{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	_ = cmd.Execute()
+
+	stderr := errBuf.String()
+	// The flag value should be used, not the env var — both enable OCI.
+	if !strings.Contains(stderr, "oci") {
+		t.Errorf("expected stderr to mention 'oci' source, got:\n%s", stderr)
+	}
+}
+
+func TestNewDashboardCommand_HostFlag(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "pacto.yaml"), []byte(`pactoVersion: "1.0"
+service:
+  name: host-test
+  version: 1.0.0
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("KUBECONFIG", filepath.Join(dir, "nonexistent"))
+
+	svc := app.NewService(dummyStore{}, nil)
+	v := viper.New()
+	cmd := newDashboardCommand(svc, v)
+	cmd.SetArgs([]string{dir, "--port", "0", "--host", "0.0.0.0"})
+
+	var errBuf bytes.Buffer
+	cmd.SetErr(&errBuf)
+	cmd.SetOut(&bytes.Buffer{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	cmd.SetContext(ctx)
+
+	_ = cmd.Execute()
+
+	stderr := errBuf.String()
+	// When host is 0.0.0.0, display should show 127.0.0.1 for user-friendliness.
+	if !strings.Contains(stderr, "127.0.0.1") {
+		t.Errorf("expected display address 127.0.0.1 when host is 0.0.0.0, got:\n%s", stderr)
+	}
+}
+
 func TestNewDashboardCommand_DefaultFlags(t *testing.T) {
 	svc := app.NewService(nil, nil)
 	v := viper.New()
 	cmd := newDashboardCommand(svc, v)
 
 	// Verify default flag values
+	host, _ := cmd.Flags().GetString("host")
+	if host != "127.0.0.1" {
+		t.Errorf("expected default host 127.0.0.1, got %q", host)
+	}
 	port, _ := cmd.Flags().GetInt("port")
 	if port != 3000 {
 		t.Errorf("expected default port 3000, got %d", port)

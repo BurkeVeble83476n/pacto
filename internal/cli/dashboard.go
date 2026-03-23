@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io/fs"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -48,9 +49,10 @@ Services are grouped by name across sources and merged using priority rules:
   pacto dashboard --namespace production`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			host := v.GetString("dashboard.host")
 			port := v.GetInt("dashboard.port")
 			namespace := v.GetString("dashboard.namespace")
-			repos, _ := cmd.Flags().GetStringArray("repo")
+			repos := dashboardRepos(cmd)
 			noCache := v.GetBool("no-cache")
 			diagnostics := v.GetBool("dashboard.diagnostics")
 			dir := optionalArg(args)
@@ -70,22 +72,11 @@ Services are grouped by name across sources and merged using priority rules:
 
 			activeSources := detectResult.ActiveSources()
 			if len(activeSources) == 0 {
-				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "No data sources detected:")
-				for _, s := range detectResult.Sources {
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", s.Type, s.Reason)
-				}
+				printSourceErrors(cmd, detectResult.Sources)
 				return fmt.Errorf("at least one data source must be available")
 			}
 
-			// Print detected sources.
-			_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Detected sources:")
-			for _, s := range detectResult.Sources {
-				status := "disabled"
-				if s.Enabled {
-					status = "enabled"
-				}
-				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s (%s)\n", s.Type, status, s.Reason)
-			}
+			printDetectedSources(cmd, detectResult.Sources)
 
 			// Wrap each source with cache (different TTLs per source type).
 			cachedSources := make(map[string]dashboard.DataSource, len(activeSources))
@@ -108,6 +99,7 @@ Services are grouped by name across sources and merged using priority rules:
 				diag = detectResult.Diagnostics
 			}
 			server := dashboard.NewAggregatedServer(aggregated, uiFS, detectResult.Sources, diag)
+			server.SetListenAddr(host, port)
 
 			// Enable lazy resolution of remote OCI dependencies when a BundleStore is available.
 			if svc.BundleStore != nil {
@@ -127,24 +119,63 @@ Services are grouped by name across sources and merged using priority rules:
 			for st := range activeSources {
 				sourceNames = append(sourceNames, st)
 			}
-			addr := fmt.Sprintf("http://127.0.0.1:%d", port)
+			addr := fmt.Sprintf("http://%s:%d", displayHost(host), port)
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "\nPacto Dashboard running at %s\nSources: %s\nPress Ctrl+C to stop\n", addr, strings.Join(sourceNames, ", "))
 
-			return server.Serve(ctx, port)
+			return server.Serve(ctx, port, host)
 		},
 	}
 
+	cmd.Flags().String("host", "127.0.0.1", "bind address for the dashboard server")
 	cmd.Flags().Int("port", 3000, "port for the dashboard server")
 	cmd.Flags().String("namespace", "", "Kubernetes namespace (empty = all namespaces)")
 	cmd.Flags().StringArray("repo", nil, "OCI repository to scan (can be repeated)")
 	cmd.Flags().Bool("diagnostics", false, "enable source diagnostics panel in the dashboard UI")
 
 	// Bind to viper so flags can be overridden via PACTO_DASHBOARD_* env vars.
+	_ = v.BindPFlag("dashboard.host", cmd.Flags().Lookup("host"))
 	_ = v.BindPFlag("dashboard.port", cmd.Flags().Lookup("port"))
 	_ = v.BindPFlag("dashboard.namespace", cmd.Flags().Lookup("namespace"))
 	_ = v.BindPFlag("dashboard.diagnostics", cmd.Flags().Lookup("diagnostics"))
 
 	return cmd
+}
+
+// dashboardRepos returns OCI repos from --repo flags, falling back to PACTO_DASHBOARD_REPO env var.
+func dashboardRepos(cmd *cobra.Command) []string {
+	repos, _ := cmd.Flags().GetStringArray("repo")
+	if len(repos) == 0 {
+		if envRepos := os.Getenv("PACTO_DASHBOARD_REPO"); envRepos != "" {
+			return strings.Split(envRepos, ",")
+		}
+	}
+	return repos
+}
+
+// displayHost returns a user-friendly address for display (maps 0.0.0.0 to 127.0.0.1).
+func displayHost(host string) string {
+	if host == "" || host == "0.0.0.0" {
+		return "127.0.0.1"
+	}
+	return host
+}
+
+func printSourceErrors(cmd *cobra.Command, sources []dashboard.SourceInfo) {
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "No data sources detected:")
+	for _, s := range sources {
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", s.Type, s.Reason)
+	}
+}
+
+func printDetectedSources(cmd *cobra.Command, sources []dashboard.SourceInfo) {
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), "Detected sources:")
+	for _, s := range sources {
+		status := "disabled"
+		if s.Enabled {
+			status = "enabled"
+		}
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s (%s)\n", s.Type, status, s.Reason)
+	}
 }
 
 // cacheTTL returns the cache TTL for each source type.

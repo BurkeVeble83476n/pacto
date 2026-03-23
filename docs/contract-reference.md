@@ -278,7 +278,7 @@ Defines the service's configuration model. Optional — services with no configu
 | `ref` | string | Conditional | Non-empty. OCI or local reference to another Pacto contract. Required if `schema` is not set |
 | `values` | object | No | Must conform to the schema defined in `schema` |
 
-When `schema` is used, the configuration schema is a local file within the bundle. When `ref` is used, the schema is resolved from another Pacto contract's bundle at the fixed path `configuration/schema.json`. Both may be specified simultaneously.
+When `schema` is used, the configuration schema is a local file within the bundle. When `ref` is used, the schema is resolved from another Pacto contract's bundle at the fixed path `configuration/schema.json`. **`schema` and `ref` are mutually exclusive** — a contract must use one or the other, not both. When `ref` is set, `schema` and `values` must not be present.
 
 Required configuration keys are derived from the JSON Schema's `required` array.
 
@@ -297,6 +297,9 @@ configuration:
 ```
 
 This enables centralized configuration management — a platform team publishes a single configuration contract, and all services reference it. The reference supports recursive resolution: if the referenced contract itself has a `configuration.ref`, Pacto follows the chain (with cycle detection) using the same OCI resolution and caching infrastructure as dependencies.
+
+{: .tip }
+Configuration references create **reference edges** in the dependency graph, distinct from `dependencies[].ref` edges. Use `pacto graph --with-references` to visualize them, or `pacto graph --only-references` to show only reference edges. In the dashboard graph, reference edges appear as dashed lines.
 
 {: .warning }
 Local configuration references (`file://` and bare paths) are only allowed during development. `pacto push` rejects contracts with local `configuration.ref` — all refs must use `oci://` before publishing.
@@ -388,7 +391,7 @@ Characteristics:
 
 #### Hybrid Approaches
 
-In practice, organizations may combine both models — a platform-defined base schema that covers shared infrastructure (database connections, observability, secrets) with service-specific extensions for application-level configuration. Pacto does not prescribe a specific pattern; both `configuration.schema` and `configuration.ref` can coexist, and the schema format is identical regardless of where it originates.
+In practice, organizations may combine both models — a platform-defined base schema that covers shared infrastructure (database connections, observability, secrets) with service-specific extensions for application-level configuration. Pacto does not prescribe a specific pattern; the schema format is identical regardless of where it originates. Note that `configuration.schema` and `configuration.ref` are mutually exclusive within a single contract — choose one approach per service.
 
 ---
 
@@ -403,7 +406,7 @@ When present, at least one of `schema` or `ref` must be specified.
 | `schema` | string | Conditional | Non-empty. Path to a JSON Schema file in the bundle (convention: `policy/schema.json`). Required if `ref` is not set |
 | `ref` | string | Conditional | Non-empty. OCI or local reference to another Pacto contract whose bundle contains the policy schema at the fixed path `policy/schema.json`. Required if `schema` is not set |
 
-Both `schema` and `ref` may be specified simultaneously — the contract defines its own policy and also conforms to an external one.
+**`schema` and `ref` are mutually exclusive** — a contract either defines its own policy inline or references an external one, not both.
 
 #### Policy as a contract author
 
@@ -452,6 +455,9 @@ policy:
 ```
 
 The referenced contract's bundle must have the policy schema at the fixed path `policy/schema.json`. The reference supports recursive resolution: if the referenced contract itself has a `policy.ref`, Pacto follows the chain (with cycle detection) using the same OCI resolution and caching infrastructure as dependencies.
+
+{: .tip }
+Like `configuration.ref`, policy references create **reference edges** in the dependency graph. Use `pacto graph --with-references` to see them alongside dependencies.
 
 {: .warning }
 Local policy references (`file://` and bare paths) are only allowed during development. `pacto push` rejects contracts with local `policy.ref` — all refs must use `oci://` before publishing.

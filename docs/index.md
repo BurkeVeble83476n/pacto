@@ -197,6 +197,7 @@ Only `pacto.yaml` is required. All other directories are optional — include th
 - **Plugin-based generation** — `pacto generate` invokes out-of-process plugins to produce deployment artifacts from a contract
 - **Rich documentation** — `pacto doc` generates Markdown with architecture diagrams, interface tables, and configuration details
 - **SBOM diffing** — optional SPDX or CycloneDX SBOM inclusion with automatic package-level change detection on `pacto diff`
+- **Web dashboard** — `pacto dashboard` launches a local web UI that auto-detects contracts from Kubernetes, OCI cache, and local directories, with an interactive D3.js dependency graph and diff viewer
 - **AI assistant integration** — `pacto mcp` exposes all contract operations as [MCP](https://modelcontextprotocol.io) tools for Claude, Cursor, and GitHub Copilot
 
 ---
@@ -255,5 +256,6 @@ Consume contracts to generate deployment manifests, enforce policies, detect bre
 - **Not a service mesh or runtime agent** — there's nothing to install in your cluster; Pacto runs at build time and CI time only
 - **Not a replacement for Helm or Terraform** — it complements them as input
 - **Not a service catalog** — it produces the structured data that a catalog (Backstage, Port, Cortex) could consume
+- **Not just a build-time tool** — the [Kubernetes Operator]({{ site.baseurl }}{% link operator.md %}) extends Pacto to runtime, continuously reconciling contracts against live cluster state
 
 Pacto is a **contract standard**. It tells platforms, pipelines, and AI agents what a service *is* so they can decide how to work with it.

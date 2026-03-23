@@ -35,6 +35,10 @@ graph TD
     APP --> PLUG[pkg/plugin<br/>Plugin Runner]
     APP --> DOC[pkg/doc<br/>Doc Generator]
     APP --> OVER[pkg/override<br/>YAML Overrides]
+    CLI --> DASH[pkg/dashboard<br/>Dashboard Server]
+    DASH --> CONTRACT
+    DASH --> DOC
+    DASH --> DIFF
     DIFF --> SBOM[pkg/sbom<br/>SBOM Parser & Differ]
     VAL --> GRAPH
     DOC --> GRAPH
@@ -48,11 +52,11 @@ graph TD
 
     classDef pkg fill:#e0f0ff,stroke:#4a90d9
     classDef internal fill:#fff3e0,stroke:#e6a23c
-    class CONTRACT,VAL,DIFF,GRAPH,PLUG,DOC,SBOM,OVER pkg
+    class CONTRACT,VAL,DIFF,GRAPH,PLUG,DOC,SBOM,OVER,DASH pkg
     class APP,CLI,LOG,MCP,OCI,MAIN internal
 ```
 
-Dependencies flow **downward only**. No package imports a package above it. All core domain logic lives in `pkg/` and is reusable outside the CLI — for example, by a future Kubernetes operator.
+Dependencies flow **downward only**. No package imports a package above it. All core domain logic lives in `pkg/` and is reusable outside the CLI — for example, by the [Kubernetes Operator]({{ site.baseurl }}{% link operator.md %}).
 
 ---
 
@@ -94,7 +98,7 @@ flowchart LR
 
 Each layer short-circuits -- if it produces errors, subsequent layers are skipped.
 
-Also includes **runtime validation** (`ValidateRuntime`) -- a foundational abstraction for comparing a contract's declared state against observed runtime conditions. This is designed to be consumed by future integrations (e.g. a Kubernetes operator) without introducing platform-specific dependencies.
+Also includes **runtime validation** (`ValidateRuntime`) -- a foundational abstraction for comparing a contract's declared state against observed runtime conditions. This is consumed by the [Kubernetes Operator]({{ site.baseurl }}{% link operator.md %}) without introducing platform-specific dependencies into the core library.
 
 ### `pkg/diff` -- Change classifier
 
@@ -136,6 +140,19 @@ Generates rich Markdown documentation from a contract. Reads OpenAPI specs, even
 ### `pkg/plugin` -- Plugin system
 
 Out-of-process plugin execution via JSON stdin/stdout. Discovers plugin binaries and manages the communication protocol. See the [Plugin Development]({{ site.baseurl }}{% link plugins.md %}) guide.
+
+### `pkg/dashboard` -- Dashboard server
+
+Provides a web-based dashboard for visualizing and exploring service contracts. Auto-detects available data sources (Kubernetes, OCI cache, local filesystem) and aggregates them into a unified view.
+
+- Multi-source architecture: `DataSource` interface implemented by `K8sSource`, `CacheSource`, `LocalSource`, `OCISource`
+- `AggregatedSource` merges sources with priority: Kubernetes (runtime) > local (contract) > OCI/cache (baseline)
+- `CachedDataSource` wraps any source with in-memory TTL caching (source-type-prefixed keys to prevent cross-source collision)
+- Phase normalization: `NormalizePhase()` maps non-standard operator phases (e.g. `Reference`, `Progressing`) to the four canonical dashboard phases (`Healthy`, `Degraded`, `Invalid`, `Unknown`)
+- Graph building: `buildGlobalGraph()` constructs a flat D3-ready graph from the service index; `buildGraph()` builds a per-service dependency tree. Ref-alias mapping resolves OCI repo names (e.g. `my-service-pacto`) to contract service names (e.g. `my-service`)
+- Cross-references: config/policy OCI refs are surfaced as reference edges (dashed lines) distinct from dependency edges (solid lines)
+- Embedded SPA with D3.js force-directed graph, source/status/search filtering, service detail pages with tabs (Interfaces, Config, Policy), and diff view
+- REST API: `/api/services`, `/api/services/{name}`, `/api/services/{name}/versions`, `/api/services/{name}/sources`, `/api/services/{name}/dependents`, `/api/services/{name}/graph`, `/api/graph`, `/api/diff`, `/api/sources`
 
 ### `internal/app` -- Application services
 

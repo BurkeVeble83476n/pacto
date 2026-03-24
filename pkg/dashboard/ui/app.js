@@ -220,13 +220,22 @@ function render() {
    OVERVIEW PAGE — matches operator overview.html with D3 graph
    ════════════════════════════════════════════════════════════════ */
 var graphInitialized = false;
+var graphDataFingerprint = null;
+
+function graphFingerprint(data) {
+  if (!data || !data.nodes) return '';
+  return data.nodes.map(function(n) {
+    return n.id + ':' + (n.status || '') + ':' + (n.edges || []).map(function(e) { return e.targetId; }).join(',');
+  }).join('|');
+}
 
 var overviewLoaded = false;
 async function renderOverview() {
   var app = document.getElementById('app');
   // If we already have data, render immediately from cache, then refresh in background
   if (overviewLoaded && state.services.length) {
-    renderOverviewPage();
+    // Skip re-render on graph view to preserve zoom/drag state
+    if (state.overviewView !== 'graph' || !graphInitialized) renderOverviewPage();
     // Background refresh
     Promise.all([
       api.listServices(),
@@ -235,10 +244,18 @@ async function renderOverview() {
     ]).then(function(r) {
       state.services = r[0] || [];
       state.sourcesInfo = r[1] || [];
-      state.graphData = r[2];
-      graphInitialized = false;
+      var newFp = graphFingerprint(r[2]);
+      if (newFp !== graphDataFingerprint) {
+        state.graphData = r[2];
+        graphDataFingerprint = newFp;
+        graphInitialized = false;
+      }
       renderSourcePills();
-      renderOverviewPage();
+      // Only do a full re-render if we're NOT on the graph view,
+      // to avoid destroying user's zoom/drag state.
+      if (state.overviewView !== 'graph' || !graphInitialized) {
+        renderOverviewPage();
+      }
     }).catch(function() { /* keep stale data */ });
     return;
   }
@@ -253,6 +270,7 @@ async function renderOverview() {
     state.services = r[0] || [];
     state.sourcesInfo = r[1] || [];
     state.graphData = r[2];
+    graphDataFingerprint = graphFingerprint(r[2]);
     graphInitialized = false;
     overviewLoaded = true;
     renderSourcePills();
@@ -1247,13 +1265,13 @@ function extractSubgraph(graphData, focusId) {
   }
 
   var subNodes = graphData.nodes.filter(function(n) { return visited[n.id]; });
-  if (subNodes.length <= 1) return null;
+  if (subNodes.length === 0) return null;
   return { nodes: subNodes };
 }
 
 function initServiceGraph(containerId, graphData, focusId) {
   var container = document.getElementById(containerId);
-  if (!container || !graphData || !graphData.nodes || graphData.nodes.length < 2) {
+  if (!container || !graphData || !graphData.nodes || graphData.nodes.length === 0) {
     if (container) container.innerHTML = '<div style="color:var(--text-dim);font-size:var(--text-sm);text-align:center;padding:40px">No dependency relationships to display</div>';
     return;
   }
@@ -1530,7 +1548,8 @@ async function renderDetail() {
 
   // If we have cached data, render immediately, then refresh in background
   if (hasExisting) {
-    renderDetailPage();
+    // Skip re-render on dependencies tab to preserve graph zoom/drag state
+    if (state.tab !== 'dependencies') renderDetailPage();
     Promise.all([
       api.getService(svcName),
       api.getVersions(svcName).catch(function() { return []; }),
@@ -1544,7 +1563,8 @@ async function renderDetail() {
       if (r[2]) state.aggregated[svcName] = r[2];
       state.dependents = r[3] || [];
       state.crossRefs = r[4] || { references: [], referencedBy: [] };
-      renderDetailPage();
+      // Skip full re-render on dependencies tab to preserve graph state
+      if (state.tab !== 'dependencies') renderDetailPage();
     }).catch(function() { /* keep stale data */ });
     return;
   }
@@ -2082,7 +2102,7 @@ function renderTabDependencies(d) {
   var o = '';
 
   // Service dependency graph — shows full chain of deps + dependents
-  o += '<div class="card" style="padding:0;overflow:hidden"><div class="card-header"><div class="section-label">Dependency Graph</div></div>';
+  o += '<div class="card" style="padding:0;overflow:hidden"><div class="card-header" style="padding:20px 20px 0"><div class="section-label">Dependency Graph</div></div>';
   o += '<div id="service-graph-container" style="width:100%;height:400px;position:relative"></div></div>';
 
 

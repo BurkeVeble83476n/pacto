@@ -501,12 +501,59 @@ func TestServerGetSources(t *testing.T) {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
 	}
 
-	var sources []SourceInfo
-	if err := json.NewDecoder(resp.Body).Decode(&sources); err != nil {
+	var body struct {
+		Sources     []SourceInfo `json:"sources"`
+		Discovering bool         `json:"discovering"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if len(sources) != 2 {
-		t.Fatalf("expected 2 sources, got %d", len(sources))
+	if len(body.Sources) != 2 {
+		t.Fatalf("expected 2 sources, got %d", len(body.Sources))
+	}
+	if body.Discovering {
+		t.Fatal("expected discovering=false when no OCI source is set")
+	}
+}
+
+func TestServerGetSources_WithOCIDiscovering(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ui := fstest.MapFS{
+		"index.html": &fstest.MapFile{Data: []byte("<html></html>")},
+	}
+	source := &mockSource{}
+	srv := NewServer(source, ui)
+	srv.sourceInfo = []SourceInfo{
+		{Type: "oci", Enabled: true, Reason: "configured"},
+	}
+	// Create an OCISource that is "discovering" (started but not done).
+	ociSrc := NewOCISource(nil, nil)
+	ociSrc.started = true // simulate started state
+	srv.SetOCISource(ociSrc)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = srv.ServeOnListener(ctx, ln) }()
+	time.Sleep(50 * time.Millisecond)
+
+	resp, err := http.Get("http://" + ln.Addr().String() + "/api/sources")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var body struct {
+		Sources     []SourceInfo `json:"sources"`
+		Discovering bool         `json:"discovering"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if !body.Discovering {
+		t.Fatal("expected discovering=true when OCI source is actively discovering")
 	}
 }
 
@@ -840,8 +887,8 @@ func TestEmbeddedUI(t *testing.T) {
 	if fsys == nil {
 		t.Fatal("expected non-nil embedded FS")
 	}
-	// The embedded ui directory should contain at least index.html.
-	f, err := fsys.Open("ui/index.html")
+	// EmbeddedUI returns the ui/ subdir, so index.html is at root.
+	f, err := fsys.Open("index.html")
 	if err != nil {
 		t.Fatalf("expected ui/index.html to exist: %v", err)
 	}

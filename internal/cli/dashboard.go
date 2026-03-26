@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -86,9 +89,10 @@ Services are grouped by name across sources and merged using priority rules:
 			// Auto-discover OCI repos from K8s services when no explicit
 			// repos are specified. This enriches the K8s-only dashboard
 			// with full contract bundles, version history, and diffs.
-			if len(repos) == 0 && svc.BundleStore != nil {
-				detectResult.EnrichFromK8s(cmd.Context(), svc.BundleStore, cacheDir)
-			}
+			needsLazyEnrich := retryOCIEnrichment(
+				cmd.Context(), cmd.ErrOrStderr(),
+				detectResult, svc.BundleStore, cacheDir, repos,
+			)
 
 			activeSources := detectResult.ActiveSources()
 			if len(activeSources) == 0 {
@@ -96,7 +100,7 @@ Services are grouped by name across sources and merged using priority rules:
 				return fmt.Errorf("at least one data source must be available")
 			}
 
-			printDetectedSources(cmd, detectResult.Sources)
+			printDetectedSources(cmd, deduplicateSourceInfo(detectResult.Sources))
 
 			// Wrap each source with cache (different TTLs per source type).
 			memCache := dashboard.NewMemoryCache()
@@ -123,6 +127,7 @@ Services are grouped by name across sources and merged using priority rules:
 				diag = detectResult.Diagnostics
 			}
 			server := dashboard.NewResolvedServer(resolved, uiFS, detectResult.Sources, diag)
+			server.UpdateSourceInfo(detectResult.Sources)
 			server.SetVersion(version)
 			server.SetListenAddr(host, port)
 
@@ -140,6 +145,15 @@ Services are grouped by name across sources and merged using priority rules:
 			// after resolve or fetch-all-versions operations.
 			if detectResult.Cache != nil {
 				server.SetCacheSource(detectResult.Cache, memCache)
+			}
+
+			// Lazy OCI enrichment: if startup retries didn't find OCI repos,
+			// register a callback so the server can retry on first API request.
+			if needsLazyEnrich {
+				server.SetLazyEnrich(wireOCIEnrichment(
+					detectResult, resolved, server, memCache,
+					svc.BundleStore, cacheDir,
+				))
 			}
 
 			ctx, stop := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
@@ -221,5 +235,104 @@ func cacheTTL(sourceType string) time.Duration {
 		return 2 * time.Second // very short for local files
 	default:
 		return 30 * time.Second
+	}
+}
+
+// enrichRetryInterval is the delay between OCI enrichment retries. Tests may
+// override this to avoid 5-second waits.
+var enrichRetryInterval = 5 * time.Second
+
+// retryOCIEnrichment attempts to discover OCI repos from K8s with retries.
+// Returns true if lazy enrichment is needed (all retries exhausted without finding OCI).
+func retryOCIEnrichment(
+	ctx context.Context,
+	w io.Writer,
+	detectResult *dashboard.DetectResult,
+	store oci.BundleStore,
+	cacheDir string,
+	repos []string,
+) bool {
+	if len(repos) != 0 || store == nil {
+		return false
+	}
+	const maxRetries = 6
+	for i := range maxRetries {
+		detectResult.EnrichFromK8s(ctx, store, cacheDir)
+		if detectResult.OCI != nil {
+			return false
+		}
+		if i < maxRetries-1 {
+			_, _ = fmt.Fprintf(w, "  waiting for K8s resources to discover OCI repos (%d/%d)...\n", i+1, maxRetries)
+			select {
+			case <-ctx.Done():
+				return true
+			case <-time.After(enrichRetryInterval):
+			}
+		}
+	}
+	_, _ = fmt.Fprintln(w, "  OCI repos not found at startup; will retry lazily on first request")
+	return true
+}
+
+// deduplicateSourceInfo keeps only the last occurrence of each source type.
+func deduplicateSourceInfo(info []dashboard.SourceInfo) []dashboard.SourceInfo {
+	seen := make(map[string]int)
+	var out []dashboard.SourceInfo
+	for _, si := range info {
+		if idx, ok := seen[si.Type]; ok {
+			out[idx] = si
+		} else {
+			seen[si.Type] = len(out)
+			out = append(out, si)
+		}
+	}
+	return out
+}
+
+// wireOCIEnrichment returns a callback that attempts OCI discovery from K8s
+// and wires the new sources into the existing pipeline. Called lazily by the
+// server when OCI was not available at startup.
+func wireOCIEnrichment(
+	detectResult *dashboard.DetectResult,
+	resolved *dashboard.ResolvedSource,
+	server *dashboard.Server,
+	memCache dashboard.Cache,
+	store oci.BundleStore,
+	cacheDir string,
+) func(ctx context.Context) bool {
+	return func(ctx context.Context) bool {
+		detectResult.EnrichFromK8s(ctx, store, cacheDir)
+		if detectResult.OCI == nil {
+			return false
+		}
+
+		slog.Info("lazy OCI enrichment: wiring OCI source into pipeline")
+
+		// Wrap the new OCI source with in-memory caching.
+		ociCached := dashboard.NewCachedDataSource(
+			detectResult.OCI, memCache, cacheTTL("oci"), "oci:",
+		)
+		resolved.AddContractSource("oci", ociCached)
+
+		// Wire OCI discovery callbacks.
+		detectResult.OCI.SetOnDiscover(memCache.InvalidateAll)
+		server.SetOCISource(detectResult.OCI)
+
+		// Wire cache source if it was created during enrichment.
+		if detectResult.Cache != nil {
+			cacheCached := dashboard.NewCachedDataSource(
+				detectResult.Cache, memCache, cacheTTL("cache"), "cache:",
+			)
+			resolved.AddSource("cache", cacheCached)
+			server.SetCacheSource(detectResult.Cache, memCache)
+		}
+
+		// Update source metadata for /api/sources.
+		server.UpdateSourceInfo(detectResult.Sources)
+
+		// Invalidate all caches so new data surfaces immediately.
+		memCache.InvalidateAll()
+
+		return true
 	}
 }

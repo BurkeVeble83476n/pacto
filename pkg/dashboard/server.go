@@ -288,25 +288,23 @@ func (s *Server) RegisterOperations(api huma.API) {
 		}, s.listRemoteVersions)
 	}
 
-	if s.diagnostics != nil {
-		huma.Register(api, huma.Operation{
-			OperationID: "debug-sources",
-			Method:      http.MethodGet,
-			Path:        "/api/debug/sources",
-			Summary:     "Debug source diagnostics",
-			Description: "Returns detailed diagnostic information about source detection.",
-			Tags:        []string{"Debug"},
-		}, s.debugSources)
+	huma.Register(api, huma.Operation{
+		OperationID: "debug-sources",
+		Method:      http.MethodGet,
+		Path:        "/api/debug/sources",
+		Summary:     "Debug source diagnostics",
+		Description: "Returns detailed diagnostic information about source detection.",
+		Tags:        []string{"Debug"},
+	}, s.debugSources)
 
-		huma.Register(api, huma.Operation{
-			OperationID: "debug-services",
-			Method:      http.MethodGet,
-			Path:        "/api/debug/services",
-			Summary:     "Debug per-source services",
-			Description: "Returns per-source service breakdown for debugging.",
-			Tags:        []string{"Debug"},
-		}, s.debugServices)
-	}
+	huma.Register(api, huma.Operation{
+		OperationID: "debug-services",
+		Method:      http.MethodGet,
+		Path:        "/api/debug/services",
+		Summary:     "Debug per-source services",
+		Description: "Returns per-source service breakdown for debugging.",
+		Tags:        []string{"Debug"},
+	}, s.debugServices)
 }
 
 // ExportOpenAPI builds the Huma API with all operations registered and returns the
@@ -625,7 +623,7 @@ func (s *Server) getDiff(ctx context.Context, input *diffInput) (*getDiffOutput,
 
 	result, err := s.source.GetDiff(ctx, a, b)
 	if err != nil {
-		return nil, huma.Error500InternalServerError(err.Error())
+		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
 	return &getDiffOutput{Body: result}, nil
 }

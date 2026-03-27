@@ -221,6 +221,16 @@ The dashboard exposes exactly **three public source types**:
 
 There is no `"cache"` source visible to the API or UI. Materialized bundles on disk are an internal implementation detail of the OCI source (see [Internal materialization](#internal-materialization) below).
 
+### Discovery lifecycle
+
+`OCISource` runs a **continuous background loop** (not one-shot):
+
+1. **Shallow scan** (synchronous, at first `ListServices` call) -- one `ListTags` + `Pull` per configured repo. Fast.
+2. **Deep discovery** (background goroutine) -- BFS across dependency refs, prefetches all semver versions. Closes `s.done` after the first cycle, ending the "discovering" UI state.
+3. **Periodic rediscovery** -- after the first cycle, re-runs every 60 seconds (`ociRediscoverInterval`). Picks up new services, dependencies, and versions pushed since the last scan. Each cycle rescans the internal cache and invalidates in-memory caches so enrichment data (hash, classification) surfaces immediately.
+
+`K8sSource` is query-on-demand with a 3-second list cache TTL. Each API call fetches fresh data -- no background polling or watching.
+
 ### Source categories
 
 Sources are divided into two categories with different roles:
@@ -265,7 +275,7 @@ The flow:
 
 1. `OCISource.SetCache(cs)` wires a `CacheSource` internally
 2. `OCISource.GetVersions()` lists tags from the registry (bare version + ref), then enriches each version with hash, createdAt, and classification from the internal cache
-3. After resolve or fetch-all-versions operations, `Server.refreshCacheSources()` rescans the disk cache and invalidates the memory cache so new data surfaces immediately
+3. Cache rescans happen in three places: after each background discovery cycle (`discoverAndPrefetch`), after resolve operations, and after fetch-all-versions -- all call `RescanCache()` + memory cache invalidation so new data surfaces immediately
 4. If no live OCI registry is configured but cached bundles exist, `ActiveSources()` in `detect.go` maps the `CacheSource` under the `"oci"` key -- the user sees `"oci"` as the source, never `"cache"`
 
 The `createdAt` timestamp from cached bundles reflects **local materialization time** (when the bundle was pulled to disk), not the registry push time. OCI registries do not expose push timestamps via tag listing.
@@ -275,8 +285,11 @@ The `createdAt` timestamp from cached bundles reflects **local materialization t
 The `--no-cache` flag is a **cold-start mode**, not a fully stateless mode:
 
 - At startup, `DetectSources()` skips `detectCache()` entirely -- no pre-existing cached bundles are scanned or indexed
-- OCI pulls during the session still write bundles to disk (via `CachedStore`)
-- If the user triggers "Fetch all versions" or lazy dependency resolution, `refreshCacheSources()` creates a `CacheSource` on the fly and wires it into the OCI source for enrichment
+- `CachedStore.DisableCache()` skips disk **reads** (no stale data), but disk **writes** remain enabled so same-session pulls are persisted
+- The dashboard resolves `cacheDir` from `CachedStore.CacheDir()` when not explicitly set, ensuring `RefreshCacheSources()` knows where to find materialized bundles
+- The `memCache` is always wired at startup (even with `--no-cache`) via `SetCacheSource(nil, memCache)`, ensuring `RefreshCacheSources()` can invalidate stale entries after on-the-fly creation
+- If the user triggers "Fetch all versions" or lazy dependency resolution, `RefreshCacheSources()` creates a `CacheSource` on the fly from disk and wires it into the OCI source for enrichment
+- The `onDiscover` callback is wired to `server.RefreshCacheSources` (not just `memCache.InvalidateAll`), so continuous background discovery also triggers on-the-fly `CacheSource` creation
 - This means `--no-cache` ensures a clean start but allows same-session materialization to enrich the current view
 
 ### Graph model
@@ -344,7 +357,11 @@ These rules must be preserved by future changes. Each exists for a specific reas
 | Cache must never become a public source | Users see three sources: `local`, `oci`, `k8s`. Cache is an internal optimization. Exposing it would create confusion about which "oci" data is authoritative. |
 | `resolverVersionSources` must not include `"cache"` | Cache enrichment happens inside `OCISource.GetVersions()`, not at the resolver level. Adding cache to the resolver would double-count versions. |
 | Classification requires materialized bundles | `ClassifyVersions()` diffs consecutive bundles. Without both bundles available, no classification is computed. This is correct behavior, not a bug. |
-| `--no-cache` skips startup scanning, not same-session materialization | Cold-start mode ensures deterministic initial state. But bundles fetched during the session are still cached and usable, preventing a degraded experience. |
+| `--no-cache` skips startup scanning, not same-session materialization | Cold-start mode ensures deterministic initial state. `DisableCache()` only skips disk reads — disk writes remain enabled so bundles fetched during the session are persisted and available for enrichment. |
+| `DisableCache()` must never disable disk writes | Same-session materialization (fetch-all-versions, resolve) relies on `CachedStore` writing bundles to disk. `CacheSource` then reads these during `RefreshCacheSources()` to provide hash, createdAt, and classification enrichment. |
 | `internal/app` methods are stateless | Options in, result out. No side effects beyond the operation itself. This makes testing and composition straightforward. |
 | Validation is deterministic | No configurable rule sets. Same contract + same schema = same result, always. |
 | `CacheSource` labels its output as `"oci"`, never `"cache"` | When cache stands in for OCI (offline fallback), `mergeServiceEntry()` picks up `Source` from the service. Labeling as `"cache"` would leak the internal concept to the UI. |
+| OCI discovery is continuous, not one-shot | New services and versions pushed after startup must surface without restarting the dashboard. The background loop re-runs discovery every 60 seconds. |
+| K8s enrichment retries stop on permanent errors | If the Pacto CRD is not installed (`ListServices` returns "resource not found"), `EnrichFromK8s` nils the K8s source so the retry loop exits immediately instead of waiting 30 seconds. |
+| UI data refresh must not disrupt user state | DOM morphing preserves scroll position, form values, `<details>` open/closed state, and D3-managed containers. Debug panels use `patchDOM` instead of `innerHTML` replacement. |

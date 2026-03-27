@@ -1733,7 +1733,7 @@ func TestServerRefreshCacheSources(t *testing.T) {
 	}
 
 	// Call refreshCacheSources.
-	srv.refreshCacheSources()
+	srv.RefreshCacheSources()
 
 	// Index cache should be nil.
 	srv.indexMu.Lock()
@@ -1785,7 +1785,7 @@ service:
 	srv.memCache = memCache
 
 	// No cacheSource yet — refreshCacheSources should create one on-the-fly.
-	srv.refreshCacheSources()
+	srv.RefreshCacheSources()
 
 	if srv.cacheSource == nil {
 		t.Error("expected cacheSource to be created on-the-fly")
@@ -1981,6 +1981,135 @@ func TestServerUpdateSourceInfo(t *testing.T) {
 				t.Errorf("expected reason 'discovered from K8s', got %q", si.Reason)
 			}
 		}
+	}
+}
+
+func TestNoCache_AllowsSameSessionEnrichment(t *testing.T) {
+	// Full end-to-end test of --no-cache same-session enrichment:
+	// 1. Start with --no-cache (no CacheSource at startup)
+	// 2. Call GetVersions → bare versions (no hash, no createdAt)
+	// 3. Simulate fetch-all-versions writing bundles to disk
+	// 4. RefreshCacheSources → on-the-fly CacheSource creation
+	// 5. Call GetVersions again → enriched versions (hash, createdAt, classification)
+
+	cacheDir := t.TempDir()
+	ctx := context.Background()
+
+	// ── Step 1: Set up OCI source with mock store (--no-cache mode) ──
+
+	store := newMockBundleStore()
+	store.addBundle("ghcr.io/org/svc", "1.0.0", "svc", "1.0.0")
+	store.addBundle("ghcr.io/org/svc", "2.0.0", "svc", "2.0.0")
+
+	ociSource := NewOCISource(store, []string{"ghcr.io/org/svc"})
+	// Trigger discovery so repoMap is populated.
+	_, _ = ociSource.ListServices(ctx)
+	<-ociSource.done // wait for background discovery
+
+	// Build resolved source with only OCI (no cache — --no-cache mode).
+	memCache := NewMemoryCache()
+	cachedOCI := NewCachedDataSource(ociSource, memCache, 5*time.Minute, "oci:")
+	resolved := BuildResolvedSource(map[string]DataSource{"oci": cachedOCI})
+
+	// Build server.
+	ui := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html></html>")}}
+	srv := NewResolvedServer(resolved, ui, nil, nil)
+	srv.SetCacheSource(nil, memCache) // nil CacheSource, non-nil memCache
+	srv.SetCacheDir(cacheDir)
+	srv.SetOCISource(ociSource)
+
+	// ── Step 2: GetVersions returns bare versions ──
+
+	versions := getVersions(t, resolved, "svc", 2)
+	assertBareVersions(t, versions)
+
+	// ── Step 3: Simulate fetch-all-versions writing bundles to disk ──
+
+	writeBundleTarGzFile(t,
+		filepath.Join(cacheDir, "ghcr.io/org/svc/1.0.0/bundle.tar.gz"),
+		`pactoVersion: "1.0"
+service:
+  name: svc
+  version: 1.0.0
+`)
+	writeBundleTarGzFile(t,
+		filepath.Join(cacheDir, "ghcr.io/org/svc/2.0.0/bundle.tar.gz"),
+		`pactoVersion: "1.0"
+service:
+  name: svc
+  version: 2.0.0
+`)
+
+	// ── Step 4: RefreshCacheSources creates CacheSource on-the-fly ──
+
+	srv.RefreshCacheSources()
+
+	if srv.cacheSource == nil {
+		t.Fatal("expected CacheSource to be created on-the-fly after materialization")
+	}
+
+	// OCI source should have internal cache wired.
+	ociSource.mu.RLock()
+	hasCache := ociSource.cache != nil
+	ociSource.mu.RUnlock()
+	if !hasCache {
+		t.Fatal("expected OCI source to have internal cache wired for enrichment")
+	}
+
+	// Memory cache should be invalidated so next GetVersions fetches fresh data.
+	if _, ok := memCache.Get("oci:versions:svc"); ok {
+		t.Error("expected memCache to be invalidated after RefreshCacheSources")
+	}
+
+	// ── Step 5: GetVersions returns enriched versions ──
+
+	versions = getVersions(t, resolved, "svc", 2)
+	assertEnrichedVersions(t, versions)
+}
+
+func getVersions(t *testing.T, rs *ResolvedSource, name string, expectedCount int) []Version {
+	t.Helper()
+	versions, err := rs.GetVersions(context.Background(), name)
+	if err != nil {
+		t.Fatalf("GetVersions(%s): %v", name, err)
+	}
+	if len(versions) != expectedCount {
+		t.Fatalf("expected %d versions, got %d", expectedCount, len(versions))
+	}
+	return versions
+}
+
+func assertBareVersions(t *testing.T, versions []Version) {
+	t.Helper()
+	for _, v := range versions {
+		if v.ContractHash != "" {
+			t.Errorf("version %s should have no hash before enrichment, got %q", v.Version, v.ContractHash)
+		}
+		if v.CreatedAt != nil {
+			t.Errorf("version %s should have no createdAt before enrichment", v.Version)
+		}
+	}
+}
+
+func assertEnrichedVersions(t *testing.T, versions []Version) {
+	t.Helper()
+	for _, v := range versions {
+		if v.ContractHash == "" {
+			t.Errorf("version %s: ContractHash should be populated after enrichment", v.Version)
+		}
+		if v.CreatedAt == nil {
+			t.Errorf("version %s: CreatedAt should be populated after enrichment", v.Version)
+		}
+	}
+	hasClassification := false
+	for _, v := range versions {
+		if v.Classification != "" {
+			hasClassification = true
+			break
+		}
+	}
+	if !hasClassification {
+		t.Error("expected at least one version to have Classification after enrichment")
 	}
 }
 

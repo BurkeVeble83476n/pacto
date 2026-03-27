@@ -124,6 +124,15 @@ function morphNode(parent, ln, nn) {
     return;
   }
 
+  // Preserve <details> open/closed state across DOM patches
+  if (tag === 'DETAILS') {
+    var wasOpen = ln.open;
+    morphAttrs(ln, nn);
+    morphChildren(ln, nn);
+    ln.open = wasOpen;
+    return;
+  }
+
   morphAttrs(ln, nn);
   morphChildren(ln, nn);
 }
@@ -286,6 +295,9 @@ function navigateTo(view, svc, ref, compat, _fromPopState) {
       history.pushState(null, '', wantHash);
     }
   }
+  // Force clean render on navigation so patchDOM is never used across
+  // incompatible page structures (e.g. detail→overview).
+  _currentPage = null;
   _renderGen++;
   render();
 }
@@ -535,11 +547,17 @@ function renderOverviewPage() {
   if (!svcs.length) {
     var emptyHTML = '<h1 class="page-title">Overview</h1><p class="page-subtitle">0 contracts</p>';
     emptyHTML += '<div class="empty-state"><div class="empty-state-title">No Pacto resources found</div><p>No service contracts detected from any source.</p></div>';
+    emptyHTML += '<div id="debug-panel-slot"></div>';
+    updateApp(emptyHTML, 'overview-empty');
     api.getDebugSources().then(function(debug) {
-      document.getElementById('app').innerHTML = emptyHTML + renderDebugPanel(debug);
-    }).catch(function() {
-      document.getElementById('app').innerHTML = emptyHTML;
-    });
+      var panel = document.getElementById('debug-panel-slot');
+      if (!panel) return;
+      if (panel.children.length > 0) {
+        patchDOM(panel, renderDebugPanel(debug));
+      } else {
+        panel.innerHTML = renderDebugPanel(debug);
+      }
+    }).catch(function() {});
     return;
   }
 
@@ -717,10 +735,16 @@ function renderOverviewPage() {
   // Render connections table
   renderConnectionsTable();
 
-  // Load debug panel in background
+  // Load debug panel in background (patchDOM preserves <details> open state)
   api.getDebugSources().then(function(debug) {
     var panel = document.getElementById('debug-panel-slot');
-    if (panel) panel.innerHTML = renderDebugPanel(debug);
+    if (!panel) return;
+    var html = renderDebugPanel(debug);
+    if (panel.children.length > 0) {
+      patchDOM(panel, html);
+    } else {
+      panel.innerHTML = html;
+    }
   }).catch(function() {});
 }
 
@@ -1798,6 +1822,7 @@ async function renderDetail() {
     if (e.status === 404 && depInfo) {
       await resolveRemoteDep(svcName, gen, depInfo.ref, depInfo.compatibility);
     } else {
+      _currentPage = null;
       app.innerHTML = '<div class="empty-state"><div class="empty-state-title">Service not found</div><p>' + h(e.message) + '</p>' +
         '<div style="margin-top:16px"><a class="dep-link" onclick="navigateTo(\'list\')">Back to overview</a></div></div>';
     }
@@ -1840,6 +1865,7 @@ function findDepInfo(name) {
 /* Attempt to lazily resolve a remote OCI dependency */
 async function resolveRemoteDep(svcName, gen, ref, compatibility) {
   var app = document.getElementById('app');
+  _currentPage = null;
   app.innerHTML = '<div class="loading"><div class="spinner"></div>Resolving remote dependency&hellip;<br><code class="text-dim" style="font-size:var(--text-xs);margin-top:8px;display:inline-block">' + h(ref) + (compatibility ? ' (' + h(compatibility) + ')' : '') + '</code></div>';
   try {
     var details = await api.resolveRef(ref, compatibility);
@@ -1868,6 +1894,7 @@ async function resolveRemoteDep(svcName, gen, ref, compatibility) {
     else if (re.status === 404) errorTitle = 'Artifact not found in registry';
     else if (re.status === 422) errorTitle = 'Invalid reference or bundle';
     else if (re.status === 502) errorTitle = 'Registry unreachable';
+    _currentPage = null;
     app.innerHTML = '<div class="empty-state"><div class="empty-state-title">' + h(errorTitle) + '</div>' +
       '<p>' + h(errorMsg) + '</p>' +
       '<code class="text-dim" style="font-size:var(--text-xs);display:block;margin-top:8px">' + h(ref) + '</code>' +

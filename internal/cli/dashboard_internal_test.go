@@ -383,10 +383,9 @@ func TestDeduplicateSourceInfo_NoDuplicates(t *testing.T) {
 	}
 }
 
-func TestRetryOCIEnrichment_WithExplicitRepos(t *testing.T) {
-	var buf bytes.Buffer
-	result := retryOCIEnrichment(
-		context.Background(), &buf,
+func TestTryOCIEnrichment_WithExplicitRepos(t *testing.T) {
+	result := tryOCIEnrichment(
+		context.Background(),
 		&dashboard.DetectResult{Diagnostics: &dashboard.SourceDiagnostics{}},
 		dummyStore{}, "", []string{"ghcr.io/org/svc"},
 	)
@@ -395,10 +394,9 @@ func TestRetryOCIEnrichment_WithExplicitRepos(t *testing.T) {
 	}
 }
 
-func TestRetryOCIEnrichment_NilStore(t *testing.T) {
-	var buf bytes.Buffer
-	result := retryOCIEnrichment(
-		context.Background(), &buf,
+func TestTryOCIEnrichment_NilStore(t *testing.T) {
+	result := tryOCIEnrichment(
+		context.Background(),
 		&dashboard.DetectResult{Diagnostics: &dashboard.SourceDiagnostics{}},
 		nil, "", nil,
 	)
@@ -407,48 +405,18 @@ func TestRetryOCIEnrichment_NilStore(t *testing.T) {
 	}
 }
 
-func TestRetryOCIEnrichment_CancelledContext(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // cancel immediately
-
-	var buf bytes.Buffer
-	result := retryOCIEnrichment(
-		ctx, &buf,
+func TestTryOCIEnrichment_NoK8s(t *testing.T) {
+	result := tryOCIEnrichment(
+		context.Background(),
 		&dashboard.DetectResult{
 			Diagnostics: &dashboard.SourceDiagnostics{},
 		},
 		dummyStore{}, t.TempDir(), nil,
 	)
-	// With cancelled context and no K8s source, enrichment won't find OCI.
+	// Without K8s source, enrichment won't find OCI.
 	// Should return true (needs lazy enrichment).
 	if !result {
-		t.Error("expected true (needs lazy enrichment) with cancelled context")
-	}
-}
-
-func TestRetryOCIEnrichment_ExhaustsRetries(t *testing.T) {
-	// Override retry interval to avoid 5s waits.
-	old := enrichRetryInterval
-	enrichRetryInterval = time.Millisecond
-	t.Cleanup(func() { enrichRetryInterval = old })
-
-	var buf bytes.Buffer
-	result := retryOCIEnrichment(
-		context.Background(), &buf,
-		&dashboard.DetectResult{
-			Diagnostics: &dashboard.SourceDiagnostics{},
-		},
-		dummyStore{}, t.TempDir(), nil,
-	)
-	if !result {
-		t.Error("expected true (needs lazy enrichment) after exhausting retries")
-	}
-	output := buf.String()
-	if !strings.Contains(output, "waiting for K8s") {
-		t.Errorf("expected retry progress messages, got:\n%s", output)
-	}
-	if !strings.Contains(output, "will retry lazily") {
-		t.Errorf("expected lazy retry message, got:\n%s", output)
+		t.Error("expected true (needs lazy enrichment) without K8s source")
 	}
 }
 
@@ -505,11 +473,7 @@ func (s *enrichStore) ListTags(_ context.Context, _ string) ([]string, error) {
 	return s.tags, nil
 }
 
-func TestRetryOCIEnrichment_SucceedsOnFirstTry(t *testing.T) {
-	old := enrichRetryInterval
-	enrichRetryInterval = time.Millisecond
-	t.Cleanup(func() { enrichRetryInterval = old })
-
+func TestTryOCIEnrichment_SucceedsOnFirstTry(t *testing.T) {
 	k8sData := `{"items": [
 		{"metadata": {"name": "svc", "namespace": "default"},
 		 "status": {"contract": {"serviceName": "svc", "imageRef": "ghcr.io/org/svc:1.0.0"}}}
@@ -530,9 +494,8 @@ func TestRetryOCIEnrichment_SucceedsOnFirstTry(t *testing.T) {
 		K8s:         dashboard.NewK8sSource(k8sClient, "", "pactos"),
 	}
 
-	var buf bytes.Buffer
-	result := retryOCIEnrichment(
-		context.Background(), &buf,
+	result := tryOCIEnrichment(
+		context.Background(),
 		detectResult, store, t.TempDir(), nil,
 	)
 	if result {
@@ -595,6 +558,111 @@ func TestWireOCIEnrichment_Success(t *testing.T) {
 	}
 	if !resolved.HasSource("oci") {
 		t.Error("expected oci source to be added to resolved")
+	}
+}
+
+func TestWireK8sRedetect_NoChange(t *testing.T) {
+	contextName := "ctx-a"
+	fn := wireK8sRedetect("", dashboard.NewMemoryCache(),
+		func() string { return contextName },
+		func(_ context.Context, result *dashboard.DetectResult, _ string) {
+			result.K8s = dashboard.NewK8sSource(&cliMockK8sClient{listJSON: []byte(`{"items":[]}`)}, "", "pactos")
+		},
+	)
+	// First call: context changes from "" to "ctx-a", k8s available → returns source.
+	ds, err := fn(context.Background())
+	if err != nil || ds == nil {
+		t.Fatalf("first call: err=%v, ds=%v", err, ds)
+	}
+
+	// Second call: context is still "ctx-a" → "no change" error.
+	_, err = fn(context.Background())
+	if err == nil || err.Error() != "no change" {
+		t.Errorf("expected 'no change' error, got %v", err)
+	}
+}
+
+func TestWireK8sRedetect_K8sNotAvailableOnFirstCall(t *testing.T) {
+	// Context changes from "" to "ctx-a" but k8s detection fails → "k8s not available".
+	fn := wireK8sRedetect("", dashboard.NewMemoryCache(),
+		func() string { return "ctx-a" },
+		func(_ context.Context, _ *dashboard.DetectResult, _ string) {
+			// Don't set result.K8s — simulates k8s being unavailable.
+		},
+	)
+	_, err := fn(context.Background())
+	if err == nil || err.Error() != "k8s not available" {
+		t.Errorf("expected 'k8s not available' error, got %v", err)
+	}
+}
+
+func TestWireK8sRedetect_ContextSwitch(t *testing.T) {
+	callCount := 0
+	contextName := "ctx-a"
+	getContext := func() string { return contextName }
+	redetect := func(_ context.Context, result *dashboard.DetectResult, _ string) {
+		callCount++
+		result.K8s = dashboard.NewK8sSource(&cliMockK8sClient{listJSON: []byte(`{"items":[]}`)}, "", "pactos")
+	}
+
+	fn := wireK8sRedetect("default", dashboard.NewMemoryCache(), getContext, redetect)
+
+	// First call: context changes from "" to "ctx-a", k8s available → returns source.
+	ds, err := fn(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ds == nil {
+		t.Error("expected non-nil DataSource")
+	}
+
+	// Second call with same context → "no change".
+	_, err = fn(context.Background())
+	if err == nil || err.Error() != "no change" {
+		t.Errorf("expected 'no change', got %v", err)
+	}
+
+	// Third call: context switches to "ctx-b".
+	contextName = "ctx-b"
+	ds, err = fn(context.Background())
+	if err != nil {
+		t.Fatalf("unexpected error on context switch: %v", err)
+	}
+	if ds == nil {
+		t.Error("expected non-nil DataSource after context switch")
+	}
+	if callCount != 2 {
+		t.Errorf("expected redetect called 2 times, got %d", callCount)
+	}
+}
+
+func TestWireK8sRedetect_ContextSwitch_K8sUnavailable(t *testing.T) {
+	contextName := "ctx-a"
+	k8sAvailable := true
+	getContext := func() string { return contextName }
+	redetect := func(_ context.Context, result *dashboard.DetectResult, _ string) {
+		if k8sAvailable {
+			result.K8s = dashboard.NewK8sSource(&cliMockK8sClient{listJSON: []byte(`{"items":[]}`)}, "", "pactos")
+		}
+	}
+
+	fn := wireK8sRedetect("", dashboard.NewMemoryCache(), getContext, redetect)
+
+	// First call: k8s available.
+	ds, err := fn(context.Background())
+	if err != nil || ds == nil {
+		t.Fatalf("first call: err=%v, ds=%v", err, ds)
+	}
+
+	// Context switches but k8s is now unreachable → returns (nil, nil).
+	contextName = "ctx-b"
+	k8sAvailable = false
+	ds, err = fn(context.Background())
+	if err != nil {
+		t.Errorf("expected nil error when context changed but k8s unreachable, got %v", err)
+	}
+	if ds != nil {
+		t.Error("expected nil DataSource when k8s unreachable")
 	}
 }
 

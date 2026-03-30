@@ -17,9 +17,10 @@ import (
 )
 
 type mockSource struct {
-	services []Service
-	details  map[string]*ServiceDetails
-	versions map[string][]Version
+	services    []Service
+	details     map[string]*ServiceDetails
+	versions    map[string][]Version
+	versionsErr map[string]error
 }
 
 func (m *mockSource) ListServices(_ context.Context) ([]Service, error) {
@@ -34,6 +35,11 @@ func (m *mockSource) GetService(_ context.Context, name string) (*ServiceDetails
 }
 
 func (m *mockSource) GetVersions(_ context.Context, name string) ([]Version, error) {
+	if m.versionsErr != nil {
+		if err, ok := m.versionsErr[name]; ok {
+			return nil, err
+		}
+	}
 	if m.versions != nil {
 		if v, ok := m.versions[name]; ok {
 			return v, nil
@@ -1108,7 +1114,7 @@ func TestGetCachedIndex_ListServicesError_WithStaleCache(t *testing.T) {
 	}
 
 	// Force cache to be stale and switch to an erroring source.
-	srv.indexCache.builtAt = time.Now().Add(-10 * time.Second)
+	srv.indexCache.builtAt = time.Now().Add(-20 * time.Second)
 	srv.source = &errorSource{listErr: fmt.Errorf("list failed")}
 
 	// Should return stale cache.
@@ -2280,6 +2286,435 @@ func TestServerRedetect_NilSource(t *testing.T) {
 	resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+}
+
+func TestServerVersionTracking_ListServices(t *testing.T) {
+	source := &mockSource{
+		services: []Service{
+			{Name: "svc-a", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		},
+		details: map[string]*ServiceDetails{
+			"svc-a": {
+				Service:     Service{Name: "svc-a", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+				ResolvedRef: "ghcr.io/org/svc-a:1.0.0",
+			},
+		},
+		versions: map[string][]Version{
+			"svc-a": {{Version: "2.0.0"}, {Version: "1.0.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var entries []ServiceListEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if !entries[0].UpdateAvailable {
+		t.Error("expected updateAvailable=true when newer version exists")
+	}
+}
+
+func TestServerVersionTracking_ServiceDetail(t *testing.T) {
+	source := &mockSource{
+		services: []Service{
+			{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		},
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:     Service{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+				ResolvedRef: "ghcr.io/org/svc@sha256:abc123",
+			},
+		},
+		versions: map[string][]Version{
+			"svc": {{Version: "2.0.0"}, {Version: "1.0.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	// First hit list to populate the cached index.
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+
+	// Now get the detail — should pick up version tracking from cached index.
+	resp, err = http.Get(base + "/api/services/svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.VersionPolicy != VersionPolicyPinnedDigest {
+		t.Errorf("expected versionPolicy=%q, got %q", VersionPolicyPinnedDigest, detail.VersionPolicy)
+	}
+	if detail.LatestAvailable != "2.0.0" {
+		t.Errorf("expected latestAvailable=2.0.0, got %q", detail.LatestAvailable)
+	}
+	if !detail.UpdateAvailable {
+		t.Error("expected updateAvailable=true")
+	}
+}
+
+func TestServerVersionTracking_Versions_IsCurrent(t *testing.T) {
+	source := &mockSource{
+		services: []Service{{Name: "svc", Version: "1.0.0"}},
+		details:  map[string]*ServiceDetails{"svc": {Service: Service{Name: "svc", Version: "1.0.0"}}},
+		versions: map[string][]Version{
+			"svc": {{Version: "2.0.0"}, {Version: "1.0.0"}, {Version: "0.9.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	resp, err := http.Get(base + "/api/services/svc/versions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var versions []Version
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		t.Fatal(err)
+	}
+	if len(versions) != 3 {
+		t.Fatalf("expected 3 versions, got %d", len(versions))
+	}
+
+	for _, v := range versions {
+		if v.Version == "1.0.0" && !v.IsCurrent {
+			t.Error("expected 1.0.0 to be marked as current")
+		}
+		if v.Version != "1.0.0" && v.IsCurrent {
+			t.Errorf("expected %s NOT to be marked as current", v.Version)
+		}
+	}
+}
+
+func TestServerVersionTracking_NoUpdateWhenCurrent(t *testing.T) {
+	source := &mockSource{
+		services: []Service{
+			{Name: "svc", Version: "2.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		},
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:     Service{Name: "svc", Version: "2.0.0", ContractStatus: StatusCompliant, Source: "local"},
+				ResolvedRef: "ghcr.io/org/svc:2.0.0",
+			},
+		},
+		versions: map[string][]Version{
+			"svc": {{Version: "2.0.0"}, {Version: "1.0.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var entries []ServiceListEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].UpdateAvailable {
+		t.Error("expected updateAvailable=false when already on latest")
+	}
+}
+
+func TestServerVersionTracking_PolicyFallback(t *testing.T) {
+	// When cached index is empty, getService uses conservative fallback.
+	// :latest is ambiguous → returns empty string (not "tracking").
+	source := &mockSource{
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:     Service{Name: "svc", Version: "1.0.0", Source: "local"},
+				ResolvedRef: "ghcr.io/org/svc:latest",
+			},
+		},
+	}
+	base := startTestServer(t, source)
+
+	resp, err := http.Get(base + "/api/services/svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.VersionPolicy != "" {
+		t.Errorf("expected empty versionPolicy for ambiguous :latest ref, got %q", detail.VersionPolicy)
+	}
+}
+
+func TestServerVersionTracking_OperatorPolicy(t *testing.T) {
+	// When operator provides resolutionPolicy, it takes precedence over fallback.
+	source := &mockSource{
+		services: []Service{
+			{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		},
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:       Service{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+				ResolvedRef:   "ghcr.io/org/svc:1.0.0",
+				VersionPolicy: VersionPolicyTracking, // operator says tracking despite semver tag in ref
+			},
+		},
+		versions: map[string][]Version{
+			"svc": {{Version: "2.0.0"}, {Version: "1.0.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	// Build cached index via list.
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+
+	// Get detail — should use operator-provided "tracking", not fallback "pinned-tag".
+	resp, err = http.Get(base + "/api/services/svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.VersionPolicy != VersionPolicyTracking {
+		t.Errorf("expected operator-provided versionPolicy=%q, got %q", VersionPolicyTracking, detail.VersionPolicy)
+	}
+}
+
+func TestServerVersionTracking_FallbackPinnedDigest(t *testing.T) {
+	// Conservative fallback correctly identifies digest refs.
+	source := &mockSource{
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:     Service{Name: "svc", Version: "1.0.0", Source: "oci"},
+				ResolvedRef: "ghcr.io/org/svc@sha256:abc123",
+			},
+		},
+	}
+	base := startTestServer(t, source)
+
+	resp, err := http.Get(base + "/api/services/svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.VersionPolicy != VersionPolicyPinnedDigest {
+		t.Errorf("expected versionPolicy=%q for digest ref, got %q", VersionPolicyPinnedDigest, detail.VersionPolicy)
+	}
+}
+
+func pinnedOlderSource() *mockSource {
+	return &mockSource{
+		services: []Service{
+			{Name: "payments", Version: "1.2.0", ContractStatus: StatusCompliant, Source: "oci"},
+		},
+		details: map[string]*ServiceDetails{
+			"payments": {
+				Service:       Service{Name: "payments", Version: "1.2.0", ContractStatus: StatusCompliant, Source: "oci"},
+				ResolvedRef:   "ghcr.io/org/payments:1.2.0",
+				VersionPolicy: VersionPolicyPinnedTag,
+			},
+		},
+		versions: map[string][]Version{
+			"payments": {{Version: "2.0.0"}, {Version: "1.2.0"}, {Version: "1.0.0"}},
+		},
+	}
+}
+
+func TestServerVersionTracking_PinnedOlderThanLatest_List(t *testing.T) {
+	base := startTestServer(t, pinnedOlderSource())
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []ServiceListEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Version != "1.2.0" {
+		t.Errorf("expected version=1.2.0, got %q", entries[0].Version)
+	}
+	if !entries[0].UpdateAvailable {
+		t.Error("expected updateAvailable=true")
+	}
+}
+
+func TestServerVersionTracking_PinnedOlderThanLatest_Detail(t *testing.T) {
+	base := startTestServer(t, pinnedOlderSource())
+	// Warm service index cache (version tracking runs on list).
+	warmResp, _ := http.Get(base + "/api/services") //nolint:errcheck
+	if warmResp != nil {
+		warmResp.Body.Close() //nolint:errcheck
+	}
+	resp, err := http.Get(base + "/api/services/payments")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+	if detail.Version != "1.2.0" {
+		t.Errorf("expected version=1.2.0, got %q", detail.Version)
+	}
+	if detail.LatestAvailable != "2.0.0" {
+		t.Errorf("expected latestAvailable=2.0.0, got %q", detail.LatestAvailable)
+	}
+	if !detail.UpdateAvailable {
+		t.Error("expected updateAvailable=true")
+	}
+	if detail.VersionPolicy != VersionPolicyPinnedTag {
+		t.Errorf("expected versionPolicy=%q, got %q", VersionPolicyPinnedTag, detail.VersionPolicy)
+	}
+}
+
+func TestServerVersionTracking_PinnedOlderThanLatest_Versions(t *testing.T) {
+	base := startTestServer(t, pinnedOlderSource())
+	// Warm service index cache (version tracking runs on list).
+	warmResp, _ := http.Get(base + "/api/services") //nolint:errcheck
+	if warmResp != nil {
+		warmResp.Body.Close() //nolint:errcheck
+	}
+	resp, err := http.Get(base + "/api/services/payments/versions")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var versions []Version
+	if err := json.NewDecoder(resp.Body).Decode(&versions); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+	for _, v := range versions {
+		if v.Version == "1.2.0" && !v.IsCurrent {
+			t.Error("expected 1.2.0 to be marked as current")
+		}
+		if v.Version == "2.0.0" && v.IsCurrent {
+			t.Error("expected 2.0.0 NOT to be marked as current")
+		}
+	}
+}
+
+func TestServerVersionTracking_VersionsError(t *testing.T) {
+	// When GetVersions fails, enrichVersionTracking should skip the service
+	// without latestAvailable or updateAvailable.
+	source := &mockSource{
+		services: []Service{
+			{Name: "broken", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "oci"},
+		},
+		details: map[string]*ServiceDetails{
+			"broken": {
+				Service: Service{Name: "broken", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "oci"},
+			},
+		},
+		versionsErr: map[string]error{
+			"broken": fmt.Errorf("versions unavailable"),
+		},
+	}
+	base := startTestServer(t, source)
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var entries []ServiceListEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].UpdateAvailable {
+		t.Error("expected updateAvailable=false when versions fail")
+	}
+}
+
+func TestServerVersionTracking_FreshVersionRecomputesUpdate(t *testing.T) {
+	// The cached index may have computed updateAvailable against an old version.
+	// When getService returns a fresh version (e.g. operator upgraded), the
+	// handler must recompute updateAvailable against the fresh version.
+	source := &mockSource{
+		services: []Service{
+			{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		},
+		details: map[string]*ServiceDetails{
+			"svc": {
+				Service:     Service{Name: "svc", Version: "1.0.0", ContractStatus: StatusCompliant, Source: "local"},
+				ResolvedRef: "ghcr.io/org/svc:1.0.0",
+			},
+		},
+		versions: map[string][]Version{
+			"svc": {{Version: "2.0.0"}, {Version: "1.0.0"}},
+		},
+	}
+	base := startTestServer(t, source)
+
+	// Build index (caches updateAvailable=true against version 1.0.0).
+	resp, err := http.Get(base + "/api/services")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close() //nolint:errcheck
+
+	// Simulate operator upgrading to 2.0.0: mutate the mock's detail.
+	source.details["svc"] = &ServiceDetails{
+		Service:     Service{Name: "svc", Version: "2.0.0", ContractStatus: StatusCompliant, Source: "local"},
+		ResolvedRef: "ghcr.io/org/svc:2.0.0",
+	}
+
+	// getService should recompute: version=2.0.0, latestAvailable=2.0.0 → updateAvailable=false.
+	resp, err = http.Get(base + "/api/services/svc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+
+	var detail ServiceDetails
+	if err := json.NewDecoder(resp.Body).Decode(&detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Version != "2.0.0" {
+		t.Errorf("expected fresh version=2.0.0, got %q", detail.Version)
+	}
+	if detail.UpdateAvailable {
+		t.Error("expected updateAvailable=false after upgrade to latest, but got true (stale cache)")
 	}
 }
 

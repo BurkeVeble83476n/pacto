@@ -329,6 +329,35 @@ func buildComprehensiveK8sDetails(t *testing.T) *ServiceDetails {
 	return serviceDetailsFromK8sStatus(r)
 }
 
+func TestK8s_serviceDetailsFromK8sStatus_ResolutionPolicy(t *testing.T) {
+	tests := []struct {
+		name             string
+		resolutionPolicy string
+		wantPolicy       string
+	}{
+		{"Latest", "Latest", VersionPolicyTracking},
+		{"PinnedTag", "PinnedTag", VersionPolicyPinnedTag},
+		{"PinnedDigest", "PinnedDigest", VersionPolicyPinnedDigest},
+		{"absent", "", ""},
+		{"unknown value", "SomeOther", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := &pactoResource{}
+			r.Status.ContractStatus = "Compliant"
+			r.Status.Contract = &k8sContractInfo{
+				ServiceName:      "svc",
+				Version:          "1.0.0",
+				ResolutionPolicy: tt.resolutionPolicy,
+			}
+			d := serviceDetailsFromK8sStatus(r)
+			if d.VersionPolicy != tt.wantPolicy {
+				t.Errorf("resolutionPolicy=%q → versionPolicy=%q, want %q", tt.resolutionPolicy, d.VersionPolicy, tt.wantPolicy)
+			}
+		})
+	}
+}
+
 // ---------------------------------------------------------------------------
 // timeAgoFromRFC3339
 // ---------------------------------------------------------------------------
@@ -506,6 +535,14 @@ func TestK8s_k8sEndpoints_InvalidJSON(t *testing.T) {
 	var ep k8sEndpoints
 	if err := json.Unmarshal([]byte(`not json`), &ep); err == nil {
 		t.Error("expected error for invalid JSON")
+	}
+}
+
+func TestK8s_k8sEndpoints_InvalidType(t *testing.T) {
+	// Valid JSON that is neither array, map, nor object — triggers final fallback error.
+	var ep k8sEndpoints
+	if err := json.Unmarshal([]byte(`42`), &ep); err == nil {
+		t.Error("expected error for non-object/array JSON value")
 	}
 }
 

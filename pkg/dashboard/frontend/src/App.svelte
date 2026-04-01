@@ -7,6 +7,8 @@
   import ServiceDetailView from './views/ServiceDetailView.svelte';
   import GraphPageView from './views/GraphPageView.svelte';
   import DiffView from './views/DiffView.svelte';
+  import OwnersView from './views/OwnersView.svelte';
+  import OwnerDetailView from './views/OwnerDetailView.svelte';
 
   let route = $state(parseHash(location.hash));
   let services = $state([]);
@@ -17,6 +19,10 @@
   let reloadTimer = $state(null);
   let refreshing = $state(false);
   let refreshTick = $state(0);
+  let initialLoading = $state(true);
+
+  const POLL_FAST = 2000;   // during discovery
+  const POLL_NORMAL = 10000;
 
   function onHashChange() {
     route = parseHash(location.hash);
@@ -25,36 +31,44 @@
   async function loadGlobal(forceRefresh = false) {
     refreshing = true;
     try {
-      // On manual refresh, tell the backend to re-detect sources (e.g. k8s context switch).
       if (forceRefresh) {
         await api.refresh().catch(() => {});
       }
 
-      // On detail/diff views, skip the heavy services list fetch —
-      // those views fetch their own data independently.
-      const needsServices = route.view === 'list' || route.view === 'graph' || route.view === 'diff';
+      const needsServices = route.view === 'list' || route.view === 'graph' || route.view === 'diff' || route.view === 'owners' || route.view === 'owner-detail';
 
-      const fetches = [
+      const [svcList, srcData, health] = await Promise.all([
         needsServices ? api.services() : Promise.resolve(null),
         api.sources().catch(() => ({ sources: [], discovering: false })),
         api.health().catch(() => ({})),
-      ];
-      const [svcList, srcData, health] = await Promise.all(fetches);
+      ]);
       if (svcList !== null) services = svcList || [];
       sourcesInfo = srcData.sources || [];
+      const wasDiscovering = discovering;
       discovering = srcData.discovering || false;
       appVersion = health.version || '';
       refreshTick++;
+
+      // Adjust polling speed: fast during discovery, normal otherwise
+      if (autoReload) {
+        const shouldBeFast = discovering;
+        const wasFast = wasDiscovering;
+        if (shouldBeFast !== wasFast) {
+          clearInterval(reloadTimer);
+          reloadTimer = setInterval(loadGlobal, shouldBeFast ? POLL_FAST : POLL_NORMAL);
+        }
+      }
     } catch {
       // keep stale data
     }
     refreshing = false;
+    initialLoading = false;
   }
 
   function toggleAutoReload() {
     autoReload = !autoReload;
     if (autoReload) {
-      reloadTimer = setInterval(loadGlobal, 10000);
+      reloadTimer = setInterval(loadGlobal, discovering ? POLL_FAST : POLL_NORMAL);
     } else {
       clearInterval(reloadTimer);
       reloadTimer = null;
@@ -75,8 +89,8 @@
   onMount(() => {
     window.addEventListener('hashchange', onHashChange);
     loadGlobal();
-    // Start auto-reload by default
-    reloadTimer = setInterval(loadGlobal, 10000);
+    // Start with fast polling; loadGlobal adjusts interval based on discovery state
+    reloadTimer = setInterval(loadGlobal, POLL_FAST);
     return () => {
       window.removeEventListener('hashchange', onHashChange);
       if (reloadTimer) clearInterval(reloadTimer);
@@ -112,7 +126,13 @@
     />
   {:else if route.view === 'graph'}
     <GraphPageView {services} {sourcesInfo} />
+  {:else if route.view === 'owners'}
+    <OwnersView {services} {initialLoading} />
+  {:else if route.view === 'owner-detail'}
+    {#key route.params.owner}
+      <OwnerDetailView owner={route.params.owner} {services} {initialLoading} />
+    {/key}
   {:else}
-    <ServiceListView {services} {sourcesInfo} {discovering} />
+    <ServiceListView {services} {sourcesInfo} {discovering} {initialLoading} />
   {/if}
 </main>

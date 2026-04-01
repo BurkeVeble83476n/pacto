@@ -102,4 +102,46 @@ func TestExplainCommand(t *testing.T) {
 		assertContains(t, output, "explain")
 		assertContains(t, output, "Usage")
 	})
+
+}
+
+func TestExplainStructuredOwner(t *testing.T) {
+	t.Parallel()
+
+	t.Run("text output", func(t *testing.T) {
+		t.Parallel()
+		bundlePath := writeStructuredOwnerBundle(t)
+
+		output, err := runCommand(t, nil, "explain", bundlePath)
+		if err != nil {
+			t.Fatalf("explain failed: %v\noutput: %s", err, output)
+		}
+
+		assertContains(t, output, "Owner: foundations")
+	})
+
+	t.Run("json output", func(t *testing.T) {
+		t.Parallel()
+		bundlePath := writeStructuredOwnerBundle(t)
+
+		output, err := runCommand(t, nil, "--output-format", "json", "explain", bundlePath)
+		if err != nil {
+			t.Fatalf("explain json failed: %v\noutput: %s", err, output)
+		}
+
+		var result map[string]interface{}
+		if err := json.Unmarshal([]byte(output), &result); err != nil {
+			t.Fatalf("expected valid JSON, got: %s", output)
+		}
+		owner, ok := result["owner"].(map[string]interface{})
+		if !ok {
+			t.Fatalf("expected owner to be object, got %T: %v", result["owner"], result["owner"])
+		}
+		if owner["team"] != "foundations" {
+			t.Errorf("expected owner.team=foundations, got %v", owner["team"])
+		}
+		if owner["dri"] != "eduardo.diaz" {
+			t.Errorf("expected owner.dri=eduardo.diaz, got %v", owner["dri"])
+		}
+	})
 }

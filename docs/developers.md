@@ -180,11 +180,11 @@ Use `pacto graph` to visualize your dependency tree. Pass `--with-references` to
 If your platform team publishes a policy contract, reference it in your contract:
 
 ```yaml
-policy:
-  ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
+policies:
+  - ref: oci://ghcr.io/acme/platform-policy-pacto:1.0.0
 ```
 
-A policy is a JSON Schema that validates the contract itself — enforcing organizational standards like requiring health endpoints or mandating specific ports. See [policy]({{ site.baseurl }}{% link contract-reference.md %}#policy) in the Contract Reference for details.
+A policy is a JSON Schema that validates the contract itself — enforcing organizational standards like requiring health endpoints or mandating specific ports. See [policies]({{ site.baseurl }}{% link contract-reference.md %}#policies) in the Contract Reference for details.
 
 ### 7. Reference your Helm chart (optional)
 

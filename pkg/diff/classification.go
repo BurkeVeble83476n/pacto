@@ -1,5 +1,9 @@
 package diff
 
+import "regexp"
+
+var indexRe = regexp.MustCompile(`\[\d+\]`)
+
 // classificationKey maps a field path and change type to a classification.
 type classificationKey struct {
 	Path string
@@ -34,7 +38,7 @@ var rules = map[classificationKey]Classification{
 	{"interfaces.visibility", Modified}: PotentialBreaking,
 	{"interfaces.contract", Modified}:   PotentialBreaking,
 
-	// Configuration
+	// Configuration (legacy form)
 	{"configuration.schema", Modified}: PotentialBreaking,
 	{"configuration.schema", Added}:    NonBreaking,
 	{"configuration.schema", Removed}:  Breaking,
@@ -44,11 +48,24 @@ var rules = map[classificationKey]Classification{
 	{"configuration", Added}:           NonBreaking,
 	{"configuration", Removed}:         Breaking,
 
-	// Policy
-	{"policy", Added}:           NonBreaking,
-	{"policy", Removed}:         PotentialBreaking,
-	{"policy.schema", Modified}: PotentialBreaking,
-	{"policy.ref", Modified}:    PotentialBreaking,
+	// Configuration (multi-config form, indices stripped by classify)
+	{"configuration.configs", Added}:           NonBreaking,
+	{"configuration.configs", Removed}:         Breaking,
+	{"configuration.configs.name", Modified}:   PotentialBreaking,
+	{"configuration.configs.schema", Modified}: PotentialBreaking,
+	{"configuration.configs.schema", Added}:    NonBreaking,
+	{"configuration.configs.schema", Removed}:  Breaking,
+	{"configuration.configs.ref", Modified}:    PotentialBreaking,
+	{"configuration.configs.ref", Added}:       NonBreaking,
+	{"configuration.configs.ref", Removed}:     Breaking,
+
+	// Policy (pluralized, indices stripped by classify)
+	{"policies", Added}:           NonBreaking,
+	{"policies", Removed}:         PotentialBreaking,
+	{"policies.schema", Modified}: PotentialBreaking,
+	{"policies.ref", Modified}:    PotentialBreaking,
+	{"policies.ref", Added}:       NonBreaking,
+	{"policies.ref", Removed}:     PotentialBreaking,
 
 	// Runtime — workload
 	{"runtime.workload", Modified}: Breaking,
@@ -115,9 +132,15 @@ var rules = map[classificationKey]Classification{
 }
 
 // classify returns the classification for a given path and change type.
-// Unknown paths default to PotentialBreaking.
+// Indexed paths like "configs[0].schema" are normalised to "configs.schema"
+// before lookup. Unknown paths default to PotentialBreaking.
 func classify(path string, ct ChangeType) Classification {
 	if c, ok := rules[classificationKey{path, ct}]; ok {
+		return c
+	}
+	// Strip array indices so "configs[0].schema" matches "configs.schema".
+	norm := indexRe.ReplaceAllString(path, "")
+	if c, ok := rules[classificationKey{norm, ct}]; ok {
 		return c
 	}
 	return PotentialBreaking

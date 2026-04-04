@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api } from '../lib/api.ts';
   import { navigate, serviceUrl, diffUrl, ownerUrl } from '../lib/router.ts';
   import { statusClass, complianceClass, classificationClass, sourceTooltip, versionPolicyLabel, versionPolicyClass, ownerDisplay, ownerKey, ownerIsStructured } from '../lib/format.ts';
@@ -70,7 +70,7 @@
     if (detail.interfaces?.length > 0) sections.push({ id: 'interfaces', label: 'Interfaces' });
     if (detail.dependencies?.length > 0 || dependents.length > 0 || crossRefs)
       sections.push({ id: 'dependencies', label: 'Dependencies' });
-    if (detail.configurations?.length > 0) sections.push({ id: 'config', label: 'Configuration' });
+    if (detail.configurations?.length > 0) sections.push({ id: 'config', label: 'Configurations' });
     if (detail.policies?.length > 0) sections.push({ id: 'policy', label: 'Policies' });
     if ((detail.validation?.errors?.length > 0) || (detail.validation?.warnings?.length > 0))
       sections.push({ id: 'validation', label: 'Validation' });
@@ -136,7 +136,7 @@
     if (openSections[id] === false) openSections = { ...openSections, [id]: true };
   }
 
-  let initialTick = refreshTick;
+  let initialTick = untrack(() => refreshTick);
 
   $effect(() => {
     if (refreshTick > initialTick) {

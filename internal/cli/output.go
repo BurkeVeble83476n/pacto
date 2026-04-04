@@ -220,7 +220,7 @@ func printExplainResult(cmd *cobra.Command, result *app.ExplainResult, format st
 				if dep.Required {
 					req = "required"
 				}
-				_, _ = fmt.Fprintf(w, "  - %s (%s, %s)\n", dep.Ref, dep.Compatibility, req)
+				_, _ = fmt.Fprintf(w, "  - %s: %s (%s, %s)\n", dep.Name, dep.Ref, dep.Compatibility, req)
 			}
 		}
 

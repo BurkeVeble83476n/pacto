@@ -114,8 +114,8 @@ func TestCreate_WithDependencies(t *testing.T) {
 	result, err := Create(CreateInput{
 		Name: "dep-svc",
 		Dependencies: []DependencyInput{
-			{Ref: "postgres", Required: true, Compatibility: "^1.0.0"},
-			{Ref: "redis"},
+			{Name: "postgres", Ref: "postgres", Required: true, Compatibility: "^1.0.0"},
+			{Name: "redis", Ref: "redis"},
 		},
 		DryRun: true,
 	})
@@ -523,7 +523,7 @@ func TestEdit_AddDependency(t *testing.T) {
 	result, err := Edit(EditInput{
 		Path: dir,
 		AddDependencies: []DependencyInput{
-			{Ref: "postgres", Required: true, Compatibility: "^1.0.0"},
+			{Name: "postgres", Ref: "postgres", Required: true, Compatibility: "^1.0.0"},
 		},
 	})
 	if err != nil {
@@ -540,7 +540,7 @@ func TestEdit_RemoveDependency(t *testing.T) {
 	// Add a dependency first
 	_, err := Edit(EditInput{
 		Path:            dir,
-		AddDependencies: []DependencyInput{{Ref: "redis", Compatibility: "^1.0.0"}},
+		AddDependencies: []DependencyInput{{Name: "redis", Ref: "redis", Compatibility: "^1.0.0"}},
 	})
 	if err != nil {
 		t.Fatalf("add dep: %v", err)
@@ -914,7 +914,7 @@ func TestBuildSuggestions(t *testing.T) {
 	t.Run("missing sections get suggestions", func(t *testing.T) {
 		bundle := testutil.TestBundle()
 		bundle.Contract.Dependencies = nil
-		bundle.Contract.Configuration = nil
+		bundle.Contract.Configurations = nil
 		bundle.Contract.Scaling = nil
 		s := buildSuggestions(bundle.Contract, true)
 		if len(s) == 0 {
@@ -1093,17 +1093,17 @@ func TestEnsureConfigSection(t *testing.T) {
 	t.Run("adds when missing", func(t *testing.T) {
 		m := map[string]interface{}{}
 		ensureConfigSection(m)
-		if _, ok := m["configuration"]; !ok {
-			t.Error("expected configuration added")
+		if _, ok := m["configurations"]; !ok {
+			t.Error("expected configurations added")
 		}
 	})
 
 	t.Run("no-op when present", func(t *testing.T) {
 		m := map[string]interface{}{
-			"configuration": []interface{}{map[string]interface{}{"schema": "custom.json"}},
+			"configurations": []interface{}{map[string]interface{}{"name": "default", "schema": "custom.json"}},
 		}
 		ensureConfigSection(m)
-		cfgs := m["configuration"].([]interface{})
+		cfgs := m["configurations"].([]interface{})
 		cfg := cfgs[0].(map[string]interface{})
 		if cfg["schema"] != "custom.json" {
 			t.Error("should not overwrite existing config")
@@ -1584,8 +1584,8 @@ func TestBuildStubFS(t *testing.T) {
 		Interfaces: []contract.Interface{
 			{Name: "api", Type: "http", Port: &port, Contract: "interfaces/api.yaml"},
 		},
-		Configuration: &contract.Configuration{
-			Schema: "configuration/schema.json",
+		Configurations: []contract.ConfigurationSource{
+			{Name: "default", Schema: "configuration/schema.json"},
 		},
 	}
 	fs := buildStubFS(c, []byte("test"))
@@ -1865,15 +1865,15 @@ func TestCollectDerived_AllInferences(t *testing.T) {
 func TestAssessSections_Full(t *testing.T) {
 	port := 8080
 	c := &contract.Contract{
-		PactoVersion:  "1.0",
-		Service:       contract.ServiceIdentity{Name: "test", Version: "1.0.0"},
-		Interfaces:    []contract.Interface{{Name: "api", Type: "http", Port: &port}},
-		Runtime:       &contract.Runtime{Workload: "service", State: contract.State{Type: "stateless"}},
-		Configuration: &contract.Configuration{Schema: "schema.json"},
-		Dependencies:  []contract.Dependency{{Ref: "pg", Compatibility: "^1.0.0"}},
-		Scaling:       &contract.Scaling{Min: 1, Max: 3},
-		Metadata:      map[string]interface{}{"team": "x"},
-		Policies:      []contract.PolicySource{{Schema: "policy/schema.json"}},
+		PactoVersion:   "1.0",
+		Service:        contract.ServiceIdentity{Name: "test", Version: "1.0.0"},
+		Interfaces:     []contract.Interface{{Name: "api", Type: "http", Port: &port}},
+		Runtime:        &contract.Runtime{Workload: "service", State: contract.State{Type: "stateless"}},
+		Configurations: []contract.ConfigurationSource{{Name: "default", Schema: "schema.json"}},
+		Dependencies:   []contract.Dependency{{Name: "pg", Ref: "pg", Compatibility: "^1.0.0"}},
+		Scaling:        &contract.Scaling{Min: 1, Max: 3},
+		Metadata:       map[string]interface{}{"team": "x"},
+		Policies:       []contract.PolicySource{{Name: "local", Schema: "policy/schema.json"}},
 	}
 	s := assessSections(c)
 	for _, key := range []string{"service", "interfaces", "runtime", "configuration", "dependencies", "scaling", "metadata", "policies"} {
@@ -2248,10 +2248,10 @@ func TestBuildBundleFSForValidation_WalkDirErrorsSkipped(t *testing.T) {
 	dir := testutil.WriteTestBundle(t)
 	port := 8080
 	c := &contract.Contract{
-		PactoVersion:  "1.0",
-		Service:       contract.ServiceIdentity{Name: "test", Version: "1.0.0"},
-		Interfaces:    []contract.Interface{{Name: "new-api", Type: "http", Port: &port, Contract: "interfaces/new-api.yaml"}},
-		Configuration: &contract.Configuration{Schema: "configuration/schema.json"},
+		PactoVersion:   "1.0",
+		Service:        contract.ServiceIdentity{Name: "test", Version: "1.0.0"},
+		Interfaces:     []contract.Interface{{Name: "new-api", Type: "http", Port: &port, Contract: "interfaces/new-api.yaml"}},
+		Configurations: []contract.ConfigurationSource{{Name: "default", Schema: "configuration/schema.json"}},
 	}
 	result := buildBundleFSForValidation(dir, []byte("test"), c)
 	// Should have stub for new interface and config
@@ -2312,7 +2312,7 @@ func TestCreateHandler_AllPaths(t *testing.T) {
 		"data_shared_across_instances": true,
 		"data_loss_impact":             "high",
 		"interfaces":                   `[{"name":"api","type":"http","port":8080}]`,
-		"dependencies":                 `[{"ref":"postgres","required":true}]`,
+		"dependencies":                 `[{"name":"postgres","ref":"postgres","required":true}]`,
 		"config_properties":            `[{"name":"PORT","type":"integer","required":true}]`,
 		"metadata":                     `{"team":"platform"}`,
 	})
@@ -2452,6 +2452,31 @@ func TestEdit_YAMLMarshalError(t *testing.T) {
 // --- Test helpers ---
 
 // brokenFS is a filesystem that returns errors for all operations.
+func TestRewireHealthMetricsIfNeeded_NonMapInterface(t *testing.T) {
+	rt := map[string]interface{}{}
+	m := map[string]interface{}{
+		"interfaces": []interface{}{
+			"not-a-map", // triggers the non-map branch in the loop
+			map[string]interface{}{"name": "api", "type": "http"},
+		},
+	}
+	rewireHealthMetricsIfNeeded(rt, m)
+	if _, ok := rt["health"]; !ok {
+		t.Error("expected health to be wired from the valid interface entry")
+	}
+}
+
+func TestRewireHealthMetricsIfNeeded_InterfacesNotSlice(t *testing.T) {
+	rt := map[string]interface{}{}
+	m := map[string]interface{}{
+		"interfaces": "not-a-slice", // triggers the !ok return on type assertion
+	}
+	rewireHealthMetricsIfNeeded(rt, m)
+	if _, ok := rt["health"]; ok {
+		t.Error("expected no health when interfaces is not a slice")
+	}
+}
+
 type brokenFS struct{}
 
 func (b *brokenFS) Open(name string) (fs.File, error) {

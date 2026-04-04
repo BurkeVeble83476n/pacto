@@ -374,37 +374,10 @@ func (r *DetectResult) EnrichFromK8s(ctx context.Context, store oci.BundleStore,
 // discoverOCIReposFromK8s queries K8s services and extracts unique OCI
 // repository references from their resolvedRef fields.
 func (r *DetectResult) discoverOCIReposFromK8s(ctx context.Context) ([]string, error) {
-	services, err := r.K8s.ListServices(ctx)
-	if err != nil {
-		slog.Warn("OCI enrichment: failed to list K8s services", "error", err)
-		return nil, err
+	if r.K8s == nil {
+		return nil, nil
 	}
-	slog.Debug("OCI enrichment: found K8s services", "count", len(services))
-
-	seen := make(map[string]bool)
-	var repos []string
-
-	for _, svc := range services {
-		d, err := r.K8s.GetService(ctx, svc.Name)
-		if err != nil || d == nil {
-			continue
-		}
-		// Prefer resolvedRef (most specific); fall back to imageRef
-		// (the declared ref, which may not have a digest).
-		ref := d.ResolvedRef
-		if ref == "" {
-			ref = d.ImageRef
-		}
-		if ref == "" {
-			continue
-		}
-		repo := stripTag(ref)
-		if repo != "" && !seen[repo] {
-			seen[repo] = true
-			repos = append(repos, repo)
-		}
-	}
-	return repos, nil
+	return discoverOCIReposFromSource(ctx, r.K8s)
 }
 
 // ensureCacheSource creates a CacheSource if one doesn't exist, creating the

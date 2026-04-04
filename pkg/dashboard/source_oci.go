@@ -34,6 +34,12 @@ type OCISource struct {
 
 	onDiscover func() // called when a new service is discovered (cache invalidation)
 
+	// repoProvider is an optional callback invoked during each background
+	// discovery cycle to obtain additional repos (e.g. from k8s resolvedRefs).
+	// This enables late-arriving CRDs to contribute repos even after the
+	// initial startup enrichment.
+	repoProvider func(ctx context.Context) []string
+
 	// cache is an optional internal CacheSource used to enrich version data
 	// (hash, createdAt, classification) from materialized bundles on disk.
 	// This is an internal implementation detail — cache is never exposed as
@@ -52,6 +58,13 @@ func NewOCISource(store oci.BundleStore, repos []string) *OCISource {
 // surfaces immediately on the next API call.
 func (s *OCISource) SetOnDiscover(fn func()) {
 	s.onDiscover = fn
+}
+
+// SetRepoProvider sets a callback invoked during each background discovery
+// cycle to obtain additional OCI repos. This allows k8s-discovered repos
+// to feed into OCI scanning even after the initial startup enrichment.
+func (s *OCISource) SetRepoProvider(fn func(ctx context.Context) []string) {
+	s.repoProvider = fn
 }
 
 // SetCache wires an internal CacheSource so that GetVersions can enrich
@@ -148,7 +161,7 @@ func (s *OCISource) backgroundLoop(ctx context.Context) {
 func (s *OCISource) discoverAndPrefetch(ctx context.Context) {
 	visited := make(map[string]bool)
 
-	// Mark already-discovered repos as visited.
+	// Mark already-discovered repos as visited (skip re-pulling).
 	s.mu.RLock()
 	for _, repo := range s.repoMap {
 		visited[repo] = true
@@ -162,6 +175,12 @@ func (s *OCISource) discoverAndPrefetch(ctx context.Context) {
 	var queue []string
 	for _, svc := range services {
 		queue = append(queue, s.depReposForService(ctx, svc.Name)...)
+	}
+
+	// Also add repos from the external provider (e.g. k8s resolvedRefs).
+	// This picks up CRDs that appeared after the initial startup scan.
+	if s.repoProvider != nil {
+		queue = append(queue, s.repoProvider(ctx)...)
 	}
 
 	// BFS: discover dependency repos, collecting new deps as we go.
@@ -507,12 +526,6 @@ func logOCIError(msg, key, val string, err error) {
 	}
 }
 
-// stripTag removes the tag and/or digest from an OCI ref, returning the bare
-// repository. Handles all common formats:
-//
-//	"repo:tag"                → "repo"
-//	"repo@sha256:abc"         → "repo"
-//	"repo:tag@sha256:abc"     → "repo"
 func stripTag(ref string) string {
 	// Strip digest first (@sha256:...).
 	if idx := strings.LastIndex(ref, "@"); idx > 0 {
@@ -525,4 +538,47 @@ func stripTag(ref string) string {
 		return ref[:lastColon]
 	}
 	return ref
+}
+
+// RepoProviderFromSource returns a repoProvider callback that discovers OCI
+// repos by querying a DataSource for resolvedRef / imageRef fields. Use this
+// to wire k8s-discovered repos into OCI background scanning.
+func RepoProviderFromSource(src DataSource) func(ctx context.Context) []string {
+	return func(ctx context.Context) []string {
+		repos, _ := discoverOCIReposFromSource(ctx, src)
+		return repos
+	}
+}
+
+// discoverOCIReposFromSource queries a DataSource for services and extracts
+// unique OCI repository references from their resolvedRef / imageRef fields.
+func discoverOCIReposFromSource(ctx context.Context, src DataSource) ([]string, error) {
+	services, err := src.ListServices(ctx)
+	if err != nil {
+		slog.Warn("OCI repo discovery: failed to list services", "error", err)
+		return nil, err
+	}
+
+	seen := make(map[string]bool)
+	var repos []string
+
+	for _, svc := range services {
+		d, err := src.GetService(ctx, svc.Name)
+		if err != nil || d == nil {
+			continue
+		}
+		ref := d.ResolvedRef
+		if ref == "" {
+			ref = d.ImageRef
+		}
+		if ref == "" {
+			continue
+		}
+		repo := stripTag(ref)
+		if repo != "" && !seen[repo] {
+			seen[repo] = true
+			repos = append(repos, repo)
+		}
+	}
+	return repos, nil
 }
